@@ -63,7 +63,7 @@ export default function Perfil() {
 
       <form onSubmit={enviar}>
         <div className="dato-fijo">
-          <span>Nombre</span>
+          <span>Nombre Completo</span>
           <strong>{perfil.nombre}</strong>
           <em>Lo administra Duoc y llega con tu inicio de sesión, así que no se edita acá.</em>
         </div>

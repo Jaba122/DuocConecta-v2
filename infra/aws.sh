@@ -9,6 +9,7 @@
 #   ./infra/aws.sh build       Compila la imagen de un servicio y la sube a ECR.
 #   ./infra/aws.sh desplegar   Registra la task definition y actualiza el servicio de ECS.
 #   ./infra/aws.sh front       Construye el frontend y lo publica en S3, detrás del API Gateway.
+#   ./infra/aws.sh apigw       Rutas por microservicio, validación de JWT y CORS en el API Gateway.
 #   ./infra/aws.sh iniciar     Levanta la tarea, espera el health y muestra las URLs.
 #   ./infra/aws.sh apagar      Baja la tarea a cero. IMPORTANTE: correrlo al terminar de trabajar.
 #   ./infra/aws.sh urls        Muestra las URLs del ALB y del API Gateway.
@@ -24,6 +25,12 @@ CLUSTER="$PROYECTO"
 SERVICIO_ECS="$PROYECTO"
 FAMILIA="$PROYECTO"
 SERVICIOS=(ms-usuarios bff-web ms-proyectos)
+
+# Los nombres se declaran acá y no se repiten sueltos por el script. Están pensados para que
+# quien mire la consola de AWS entienda de una qué papel cumple cada recurso: la evaluación
+# pide mostrar "la instancia de API Manager", así que se llama así y no con una sigla.
+API_NOMBRE="$PROYECTO-api-manager"
+AUTH_NOMBRE="validador-jwt-entra-id"
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Puerto y ruta de cada servicio. Se resuelven con funciones y no con arreglos asociativos
@@ -193,9 +200,9 @@ cmd_crear() {
   azul "6/6 · API Gateway (capa API Manager)"
   local dns api_id
   dns=$(aws elbv2 describe-load-balancers --load-balancer-arns "$alb_arn" --query 'LoadBalancers[0].DNSName' --output text)
-  api_id=$(aws apigatewayv2 get-apis --query "Items[?Name=='$PROYECTO'].ApiId" --output text)
+  api_id=$(aws apigatewayv2 get-apis --query "Items[?Name=='$API_NOMBRE'].ApiId" --output text)
   if [[ -z "$api_id" ]]; then
-    api_id=$(aws apigatewayv2 create-api --name "$PROYECTO" --protocol-type HTTP \
+    api_id=$(aws apigatewayv2 create-api --name "$API_NOMBRE" --protocol-type HTTP \
       --target "http://$dns" --query ApiId --output text)
   fi
   ok "API Gateway $api_id"
@@ -340,7 +347,20 @@ cmd_front() {
   }" >/dev/null 2>&1 || { falla "El laboratorio no permite buckets públicos"; exit 1; }
   # index.html también como página de error: la aplicación es de una sola página.
   aws s3 website "s3://$bucket" --index-document index.html --error-document index.html
-  ok "$bucket"
+
+  # CORS en el bucket, además del que se declara en el API Gateway. Hace falta porque
+  # el API se creó en modo rápido y eso deja una ruta por defecto implícita que no se
+  # puede eliminar: el OPTIONS del preflight cae ahí, llega a S3, y sin esta
+  # configuración S3 lo rechaza con 403 y el navegador lo reporta como error de CORS.
+  aws s3api put-bucket-cors --bucket "$bucket" --cors-configuration '{
+    "CORSRules": [{
+      "AllowedOrigins": ["http://localhost:5173"],
+      "AllowedMethods": ["GET", "HEAD"],
+      "AllowedHeaders": ["Authorization", "Content-Type"],
+      "MaxAgeSeconds": 3600
+    }]
+  }' >/dev/null
+  ok "$bucket (sitio estático, con CORS)"
 
   azul "2/4 · Construyendo el frontend"
   # VITE_BFF_URL vacío = llamadas relativas al mismo origen, que es el API Gateway.
@@ -355,43 +375,185 @@ cmd_front() {
   aws s3 sync "$RAIZ/frontend-web/dist" "s3://$bucket" --delete --only-show-errors
   ok "subido"
 
-  azul "4/4 · Rutas del API Gateway"
-  local sitio="http://$bucket.s3-website-$REGION.amazonaws.com"
-  local dns; dns=$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" \
-    --query 'LoadBalancers[0].DNSName' --output text)
-
-  # La API va al balanceador; todo lo demás, al sitio estático.
-  ruta() { # $1 = clave de ruta, $2 = destino
-    local integ id
-    # Se reutiliza la integración si ya existe una con ese destino: si no, cada corrida
-    # del script dejaría integraciones huérfanas acumulándose.
-    integ=$(aws apigatewayv2 get-integrations --api-id "$API_ID" \
-      --query "Items[?IntegrationUri=='$2'].IntegrationId | [0]" --output text)
-    if [[ -z "$integ" || "$integ" == "None" ]]; then
-      integ=$(aws apigatewayv2 create-integration --api-id "$API_ID" \
-        --integration-type HTTP_PROXY --integration-method ANY \
-        --integration-uri "$2" --payload-format-version 1.0 \
-        --query IntegrationId --output text)
-    fi
-    id=$(aws apigatewayv2 get-routes --api-id "$API_ID" \
-      --query "Items[?RouteKey=='$1'].RouteId | [0]" --output text)
-    if [[ -n "$id" && "$id" != "None" ]]; then
-      aws apigatewayv2 update-route --api-id "$API_ID" --route-id "$id" --target "integrations/$integ" >/dev/null
-    else
-      aws apigatewayv2 create-route --api-id "$API_ID" --route-key "$1" --target "integrations/$integ" >/dev/null
-    fi
-  }
-  # Las rutas con {proxy+} pasan el resto del camino a la integración con {proxy}.
-  # La ruta por defecto no tiene esa variable: ahí el API Gateway agrega el camino solo,
-  # así que su destino va sin sufijo.
-  ruta 'ANY /api/{proxy+}'      "http://$dns/api/{proxy}"
-  ruta 'ANY /actuator/{proxy+}' "http://$dns/actuator/{proxy}"
-  ruta '$default'               "$sitio"
-  ok "API Gateway enrutando front y API"
+  azul "4/4 · Configurando el API Gateway"
+  cmd_apigw
 
   grep -q '^SITIO_WEB=' "$RAIZ/infra/.recursos" 2>/dev/null \
     || echo "SITIO_WEB=$sitio" >> "$RAIZ/infra/.recursos"
   cmd_urls
+}
+
+# ---------------------------------------------------------------------------
+# apigw — configura el API Manager como intermediario real, no como simple proxy.
+#
+# Hace tres cosas que la evaluación pide de forma explícita:
+#
+#   1. Una ruta por microservicio Y por método, no un comodín. Queda explícito a dónde
+#      va cada path y con qué verbo.
+#   2. Un validador de JWT propio del API Gateway, que comprueba emisor y audiencia
+#      ANTES de que la petición llegue al backend. Es una capa independiente de la que
+#      hacen el BFF y los microservicios por su cuenta.
+#   3. CORS declarado en el API Gateway, con orígenes concretos y sin comodines.
+#
+# El frontend y la ruta de salud quedan sin validación a propósito: si el validador
+# cubriera la ruta por defecto, el navegador no podría ni descargar la aplicación.
+# ---------------------------------------------------------------------------
+cmd_apigw() {
+  source "$RAIZ/infra/.recursos" 2>/dev/null || { falla "Falta correr 'aws.sh crear' primero"; exit 1; }
+  [[ -z "${AZURE_TENANT_ID:-}" || -z "${AZURE_CLIENT_ID:-}" ]] && {
+    falla "Faltan AZURE_TENANT_ID o AZURE_CLIENT_ID en .env"; exit 1; }
+
+  local dns bucket sitio emisor
+  dns=$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" \
+    --query 'LoadBalancers[0].DNSName' --output text)
+  bucket="$PROYECTO-web-$(cuenta)"
+  sitio="http://$bucket.s3-website-$REGION.amazonaws.com"
+  emisor="https://login.microsoftonline.com/$AZURE_TENANT_ID/v2.0"
+
+  # El AWS CLI aplica --query página por página, así que con muchas rutas devuelve un
+  # "None" por cada página que no coincide y el identificador se vuelve inservible.
+  # Se pide el JSON completo, que sí viene unificado, y se filtra con jq.
+  id_ruta() {
+    aws apigatewayv2 get-routes --api-id "$API_ID" --output json \
+      | jq -r --arg k "$1" '.Items[] | select(.RouteKey==$k) | .RouteId' | head -1
+  }
+  id_integracion() {
+    aws apigatewayv2 get-integrations --api-id "$API_ID" --output json \
+      | jq -r --arg u "$1" '.Items[] | select(.IntegrationUri==$u) | .IntegrationId' | head -1
+  }
+
+  # --- Validador de JWT -----------------------------------------------------
+  # El emisor tiene que coincidir EXACTO con el claim 'iss' del token, /v2.0 incluido.
+  # La audiencia es el client-id del registro de la API en Entra ID.
+  local auth_id jwt_cfg
+  jwt_cfg="{\"Audience\":[\"$AZURE_CLIENT_ID\"],\"Issuer\":\"$emisor\"}"
+  auth_id=$(aws apigatewayv2 get-authorizers --api-id "$API_ID" --output json \
+    | jq -r --arg n "$AUTH_NOMBRE" '.Items[] | select(.Name==$n) | .AuthorizerId' | head -1)
+  if [[ -z "$auth_id" ]]; then
+    auth_id=$(aws apigatewayv2 create-authorizer --api-id "$API_ID" \
+      --name "$AUTH_NOMBRE" --authorizer-type JWT \
+      --identity-source '$request.header.Authorization' \
+      --jwt-configuration "$jwt_cfg" --query AuthorizerId --output text)
+  else
+    aws apigatewayv2 update-authorizer --api-id "$API_ID" --authorizer-id "$auth_id" \
+      --jwt-configuration "$jwt_cfg" >/dev/null
+  fi
+  ok "validador de JWT '$AUTH_NOMBRE': emisor y audiencia del tenant"
+
+  # --- Rutas ----------------------------------------------------------------
+  # Devuelve la integración para un destino, creándola si hace falta. Se llama UNA vez
+  # por servicio y no una por método: si no, son veinte llamadas a la API por corrida.
+  # $1 = destino · $2 = descripción
+  integracion() {
+    local id
+    id=$(id_integracion "$1")
+    if [[ -z "$id" ]]; then
+      aws apigatewayv2 create-integration --api-id "$API_ID" \
+        --integration-type HTTP_PROXY --integration-method ANY \
+        --integration-uri "$1" --payload-format-version 1.0 \
+        --description "$2" --query IntegrationId --output text
+    else
+      # La descripción se refresca siempre: en la consola de AWS es lo único legible de
+      # una integración, y sin ella solo se ve un identificador de siete caracteres.
+      aws apigatewayv2 update-integration --api-id "$API_ID" --integration-id "$id" \
+        --description "$2" >/dev/null
+      echo "$id"
+    fi
+  }
+
+  # $1 = clave de ruta · $2 = id de integración · $3 = "jwt" para exigir token
+  ruta() {
+    local id extra
+    extra=(--authorization-type NONE)
+    [[ "${3:-}" == "jwt" ]] && extra=(--authorization-type JWT --authorizer-id "$auth_id")
+
+    id=$(id_ruta "$1")
+    if [[ -n "$id" ]]; then
+      aws apigatewayv2 update-route --api-id "$API_ID" --route-id "$id" \
+        --target "integrations/$2" "${extra[@]}" >/dev/null
+    else
+      aws apigatewayv2 create-route --api-id "$API_ID" --route-key "$1" \
+        --target "integrations/$2" "${extra[@]}" >/dev/null
+    fi
+  }
+
+  # Primero se borran las rutas comodín de corridas anteriores: si quedaran, convivirían
+  # con las nuevas y además volverían a capturar el preflight de CORS.
+  local borradas=0 rid
+  for clave in 'ANY /api/{proxy+}' 'ANY /api/v1/bff/{proxy+}' 'ANY /api/v1/usuarios/{proxy+}' \
+               'ANY /api/v1/proyectos/{proxy+}' 'ANY /api/v1/colaboraciones/{proxy+}'; do
+    rid=$(id_ruta "$clave")
+    [[ -n "$rid" ]] && aws apigatewayv2 delete-route --api-id "$API_ID" --route-id "$rid" \
+      && borradas=$((borradas + 1))
+  done
+  [[ $borradas -gt 0 ]] && aviso "$borradas rutas comodín anteriores eliminadas"
+
+  # Una ruta por servicio y por método. Se declaran los métodos reales en vez de ANY
+  # porque ANY también captura el OPTIONS del preflight de CORS, y el navegador no manda
+  # el token en esa petición: el validador la rechazaría y el navegador lo reportaría
+  # como bloqueo de CORS. Dejando OPTIONS fuera, el API Gateway responde el preflight solo.
+  local servicios_api=(
+    "bff|bff-web - respuestas agregadas para el frontend"
+    "usuarios|ms-usuarios - perfiles, roles y visibilidad"
+    "proyectos|ms-proyectos - vitrina de proyectos"
+    "colaboraciones|ms-usuarios - solicitudes de colaboracion"
+  )
+  local integ
+  for entrada in "${servicios_api[@]}"; do
+    local path="${entrada%%|*}" desc="${entrada##*|}"
+    integ=$(integracion "http://$dns/api/v1/$path/{proxy}" "$desc")
+    for m in GET POST PUT PATCH DELETE; do
+      ruta "$m /api/v1/$path/{proxy+}" "$integ" jwt
+    done
+    printf '     %-26s %s\n' "/api/v1/$path/*" "GET POST PUT PATCH DELETE · requieren JWT"
+  done
+
+  integ=$(integracion "http://$dns/actuator/{proxy}" "Salud de los servicios - sin token, para monitoreo")
+  ruta 'ANY /actuator/{proxy+}' "$integ"
+  printf '     %-26s %s\n' "/actuator/*" "abierta, para monitoreo"
+
+  # El frontend se sirve con rutas GET explícitas y NO con la ruta por defecto.
+  # Es la diferencia que hace funcionar el preflight de CORS: si existe una ruta por
+  # defecto, el OPTIONS del navegador cae ahí y termina en S3, que responde 403 porque
+  # no admite ese método. Sin ruta por defecto, el OPTIONS no coincide con nada y el
+  # API Gateway lo contesta por su cuenta, que es justo lo que se necesita.
+  integ=$(integracion "$sitio" "Frontend estatico en S3 - la aplicacion React")
+  ruta 'GET /' "$integ"
+  ruta 'GET /{proxy+}' "$integ"
+  printf '     %-26s %s\n' "GET / y GET /*" "frontend en S3, abierto"
+
+  # La ruta por defecto NO se intenta borrar: el API se creó en modo rápido con --target,
+  # y en esas APIs es implícita — AWS la recrea aunque se elimine. Queda apuntando al
+  # frontend, así que el OPTIONS del preflight termina en S3; por eso el bucket también
+  # lleva su configuración de CORS (ver cmd_front).
+  printf '     %-26s %s\n' "por defecto" "frontend en S3 (implícita, no se puede quitar)"
+
+  # --- Limpieza -------------------------------------------------------------
+  # Cada corrida anterior pudo dejar integraciones que ya no usa ninguna ruta.
+  # Sin esto la consola se llena de entradas sin descripción y cuesta leerla.
+  local usadas huerfanas=0
+  usadas=$(aws apigatewayv2 get-routes --api-id "$API_ID" --output json \
+    | jq -r '.Items[].Target' | sed 's|integrations/||')
+  for i in $(aws apigatewayv2 get-integrations --api-id "$API_ID" --output json \
+               | jq -r '.Items[].IntegrationId'); do
+    if ! echo "$usadas" | grep -qw "$i"; then
+      aws apigatewayv2 delete-integration --api-id "$API_ID" --integration-id "$i" 2>/dev/null \
+        && huerfanas=$((huerfanas + 1))
+    fi
+  done
+  [[ $huerfanas -gt 0 ]] && ok "$huerfanas integraciones sin uso eliminadas"
+
+  # --- CORS -----------------------------------------------------------------
+  # Orígenes concretos, sin comodines. El API Gateway responde el preflight por su
+  # cuenta y sin pasarlo por el validador, que es justo lo que hace falta porque el
+  # navegador no manda el token en esa petición.
+  aws apigatewayv2 update-api --api-id "$API_ID" --cors-configuration "{
+    \"AllowOrigins\": [\"http://localhost:5173\", \"https://$API_ID.execute-api.$REGION.amazonaws.com\"],
+    \"AllowMethods\": [\"GET\",\"POST\",\"PUT\",\"PATCH\",\"DELETE\",\"OPTIONS\"],
+    \"AllowHeaders\": [\"Authorization\",\"Content-Type\"],
+    \"MaxAge\": 3600
+  }" >/dev/null
+  ok "CORS con orígenes declarados, sin comodines"
 }
 
 # ---------------------------------------------------------------------------
@@ -444,6 +606,7 @@ case "${1:-}" in
   build)     cmd_build "${2:-}" ;;
   desplegar) cmd_desplegar ;;
   front)     cmd_front ;;
+  apigw)     cmd_apigw ;;
   iniciar)   cmd_iniciar ;;
   apagar)    cmd_apagar ;;
   urls)      cmd_urls ;;
