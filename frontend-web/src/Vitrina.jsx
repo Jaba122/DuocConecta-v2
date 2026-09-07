@@ -11,6 +11,7 @@ import Aviso, { useAviso } from './Aviso'
 import DetalleProyecto from './DetalleProyecto'
 import FiltrosVitrina from './FiltrosVitrina'
 import FormularioProyecto from './FormularioProyecto'
+import PedirContacto from './PedirContacto'
 import TarjetaProyecto from './TarjetaProyecto'
 
 const SIN_FILTROS = { texto: '', escuela: '', carrera: '', herramienta: '', estado: '' }
@@ -24,6 +25,7 @@ export default function Vitrina() {
   const [filtros, setFiltros] = useState(SIN_FILTROS)
   const [abiertoId, setAbiertoId] = useState(null)
   const [editando, setEditando] = useState(null)   // null cerrado · {} nuevo · proyecto si edita
+  const [pidiendoA, setPidiendoA] = useState(null)  // el proyecto cuyo autor se quiere contactar
 
   // A quién le pedí contacto ya, para no ofrecer dos veces lo mismo.
   const [yaPedidos, setYaPedidos] = useState(new Set())
@@ -39,10 +41,15 @@ export default function Vitrina() {
     setError(null)
     listarProyectos().then(setProyectos).catch((e) => { setProyectos([]); setError(e.message) })
     // Una solicitud rechazada no bloquea para siempre: solo cuentan las que siguen en pie.
+    // Si esta llamada falla no se puede saber a quién ya se le pidió, así que se avisa en vez
+    // de dejar el botón habilitado y que el servidor rechace la solicitud repetida.
     colaboracionesEnviadas()
       .then((enviadas) => setYaPedidos(new Set(
         enviadas.filter((s) => s.estado !== 'RECHAZADA').map((s) => s.solicitadoId))))
-      .catch(() => setYaPedidos(new Set()))
+      .catch((e) => {
+        setYaPedidos(new Set())
+        setError(`No se pudieron leer tus solicitudes enviadas: ${e.message}`)
+      })
   }
 
   const guardar = async (datos) => {
@@ -73,22 +80,19 @@ export default function Vitrina() {
     }
   }
 
-  const pedirContacto = async (proyecto) => {
-    const mensaje = prompt(
-      `Cuéntale a ${proyecto.autor?.nombre ?? 'quien publicó este proyecto'} por qué quieres `
-      + `escribirle, sobre "${proyecto.nombre}":`,
-      'Hola, me interesa tu proyecto y me gustaría sumarme.')
-    if (mensaje === null) return
-
+  /** Envía la solicitud con el mensaje que se escribió en la ventana. */
+  const enviarSolicitud = async (mensaje) => {
     try {
       await solicitarColaboracion({
-        solicitadoId: proyecto.propietarioId,
-        proyectoId: proyecto.id,
+        solicitadoId: pidiendoA.propietarioId,
+        proyectoId: pidiendoA.id,
         mensaje,
       })
-      setYaPedidos(new Set([...yaPedidos, proyecto.propietarioId]))
+      setYaPedidos(new Set([...yaPedidos, pidiendoA.propietarioId]))
+      setPidiendoA(null)
       avisar('Solicitud enviada. Si acepta, sus datos aparecerán en tu perfil.')
     } catch (e) {
+      setPidiendoA(null)
       setError(e.message)
     }
   }
@@ -142,7 +146,7 @@ export default function Vitrina() {
               esMio={p.propietarioId === miOid}
               yaSolicitado={yaPedidos.has(p.propietarioId)}
               alAbrir={() => setAbiertoId(p.id)}
-              alPedirContacto={() => pedirContacto(p)}
+              alPedirContacto={() => setPidiendoA(p)}
             />
           ))}
         </div>
@@ -153,10 +157,18 @@ export default function Vitrina() {
           proyecto={abierto}
           esMio={abierto.propietarioId === miOid}
           yaSolicitado={yaPedidos.has(abierto.propietarioId)}
-          alPedirContacto={() => pedirContacto(abierto)}
+          alPedirContacto={() => { setPidiendoA(abierto); setAbiertoId(null) }}
           alEditar={() => { setEditando(abierto); setAbiertoId(null) }}
           alBorrar={() => borrar(abierto)}
           alCerrar={() => setAbiertoId(null)}
+        />
+      )}
+
+      {pidiendoA && (
+        <PedirContacto
+          proyecto={pidiendoA}
+          alEnviar={enviarSolicitud}
+          alCerrar={() => setPidiendoA(null)}
         />
       )}
 
