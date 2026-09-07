@@ -8,23 +8,35 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /**
- * Cliente HTTP con el que el BFF llama a los microservicios.
+ * Clientes HTTP hacia los microservicios.
  *
- * <p>Lleva timeouts explícitos a propósito: sin ellos, un microservicio que se cuelga dejaría al
- * BFF esperando para siempre y arrastraría al frontend con él. Cuando se agota el tiempo, el
- * manejador de errores devuelve un 503 con un mensaje claro.</p>
+ * <p>Con timeout explícito: sin él, un microservicio colgado deja al BFF esperando para siempre y
+ * se lleva al frontend con él. Al agotarse, el manejador de errores devuelve 503.</p>
  */
 @Configuration
 public class RestClientConfig {
 
-    /**
-     * Arma el cliente apuntando a ms-usuarios, con timeout de conexión y de lectura.
-     *
-     * <p>Se usa el cliente HTTP del JDK para no sumar una librería más al proyecto.</p>
-     */
+    /** Cliente hacia ms-usuarios: perfiles y redes. */
     @Bean
     public RestClient clienteMsUsuarios(PropiedadesBff propiedades) {
-        Duration timeout = Duration.ofSeconds(propiedades.getTimeoutSegundos());
+        return construir(propiedades.getUrlMsUsuarios(), propiedades.getTimeoutSegundos());
+    }
+
+    /** Cliente hacia ms-proyectos: la vitrina. */
+    @Bean
+    public RestClient clienteMsProyectos(PropiedadesBff propiedades) {
+        return construir(propiedades.getUrlMsProyectos(), propiedades.getTimeoutSegundos());
+    }
+
+    /** Cliente hacia ms-contacto: solicitudes de colaboración. */
+    @Bean
+    public RestClient clienteMsContacto(PropiedadesBff propiedades) {
+        return construir(propiedades.getUrlMsContacto(), propiedades.getTimeoutSegundos());
+    }
+
+    /** Timeout de conexión y de lectura. Usa el cliente del JDK para no sumar una librería. */
+    private RestClient construir(String urlBase, int segundos) {
+        Duration timeout = Duration.ofSeconds(segundos);
 
         // Tiempo máximo para establecer la conexión con el microservicio.
         HttpClient clienteHttp = HttpClient.newBuilder()
@@ -36,7 +48,7 @@ public class RestClientConfig {
         fabrica.setReadTimeout(timeout);
 
         return RestClient.builder()
-                .baseUrl(propiedades.getUrlMsUsuarios())
+                .baseUrl(urlBase)
                 .requestFactory(fabrica)
                 .build();
     }

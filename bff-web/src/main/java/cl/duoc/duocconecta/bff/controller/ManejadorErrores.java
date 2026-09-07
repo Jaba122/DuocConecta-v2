@@ -27,7 +27,7 @@ public class ManejadorErrores {
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         problema.setTitle("Dominio no autorizado");
         problema.setDetail("Tu correo no pertenece a un dominio institucional de Duoc UC. "
-                + "Entrá con tu cuenta @duocuc.cl, @profesor.duoc.cl o @duoc.cl.");
+                + "Entra con tu cuenta @duocuc.cl, @profesor.duoc.cl o @duoc.cl.");
         return problema;
     }
 
@@ -39,7 +39,7 @@ public class ManejadorErrores {
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         problema.setTitle("No se pudo determinar tu correo institucional");
         problema.setDetail("El token no incluye tu correo, así que no se puede asignar un rol. "
-                + "Avisá al equipo: falta configurar los claims opcionales del access token en Azure AD.");
+                + "Avisa al equipo: falta configurar los claims opcionales del access token en Azure AD.");
         return problema;
     }
 
@@ -57,12 +57,12 @@ public class ManejadorErrores {
         if (estadoRecibido.is4xxClientError()) {
             ProblemDetail problema = ProblemDetail.forStatus(estadoRecibido);
             problema.setTitle("La petición fue rechazada");
-            problema.setDetail("ms-usuarios rechazó la petición con el estado "
+            problema.setDetail("Un servicio interno rechazó la petición con el estado "
                     + estadoRecibido.value() + ".");
             return problema;
         }
 
-        log.error("ms-usuarios respondió {} al BFF.", estadoRecibido.value(), excepcion);
+        log.error("Un microservicio respondió {} al BFF.", estadoRecibido.value(), excepcion);
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.BAD_GATEWAY);
         problema.setTitle("Error en un servicio interno");
         problema.setDetail("No se pudo completar la operación porque un servicio interno falló. "
@@ -75,12 +75,12 @@ public class ManejadorErrores {
      */
     @ExceptionHandler(ResourceAccessException.class)
     public ProblemDetail manejarMicroservicioInalcanzable(ResourceAccessException excepcion) {
-        log.error("No se pudo contactar a ms-usuarios desde el BFF.", excepcion);
+        log.error("No se pudo contactar a un microservicio desde el BFF.", excepcion);
 
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
         problema.setTitle("Servicio no disponible");
-        problema.setDetail("El servicio de usuarios no está respondiendo. "
-                + "Verificá que ms-usuarios esté levantado e intentá de nuevo.");
+        problema.setDetail("Un servicio interno no está respondiendo. "
+                + "Verifica que los microservicios estén levantados e intenta de nuevo.");
         return problema;
     }
 }

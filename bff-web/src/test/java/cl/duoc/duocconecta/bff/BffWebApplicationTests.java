@@ -47,6 +47,14 @@ class BffWebApplicationTests {
                 .andExpect(status().isUnauthorized());
     }
 
+    /** Las colaboraciones son tan privadas como el perfil: sin token, 401. */
+    @Test
+    @DisplayName("GET /api/v1/bff/colaboraciones/recibidas sin token responde 401")
+    void colaboracionesSinTokenDevuelve401() throws Exception {
+        mockMvc.perform(get("/api/v1/bff/colaboraciones/recibidas"))
+                .andExpect(status().isUnauthorized());
+    }
+
     /** El endpoint de salud queda abierto para el monitoreo. */
     @Test
     @DisplayName("GET /actuator/health responde 200 sin token")

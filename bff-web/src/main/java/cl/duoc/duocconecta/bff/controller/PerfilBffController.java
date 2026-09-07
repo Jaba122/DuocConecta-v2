@@ -43,15 +43,7 @@ public class PerfilBffController {
      */
     @Operation(
             summary = "Devuelve el perfil y las redes del usuario autenticado",
-            description = """
-                    Agrega en una sola respuesta lo que la pantalla de perfil necesita: los datos
-                    del perfil y las redes sociales del usuario autenticado. Por dentro llama a
-                    ms-usuarios propagando el mismo token que trajo la petición, así el
-                    microservicio resuelve los permisos con la identidad real de la persona.
-
-                    Si es el primer ingreso, el perfil se auto-provisiona en ese momento. El campo
-                    perfilIncompleto indica si todavía faltan carrera, sede o biografía, para que
-                    el frontend pueda invitar a completarlos.""")
+            description = "Junta el perfil y las redes en una sola respuesta. Si es el primer ingreso, el perfil se crea en ese momento.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Perfil y redes obtenidos correctamente"),
             @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @Content),
