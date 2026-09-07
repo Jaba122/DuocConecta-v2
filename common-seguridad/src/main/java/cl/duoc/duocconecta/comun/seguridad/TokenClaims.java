@@ -6,11 +6,10 @@ import java.util.Optional;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
- * Lee los datos del usuario desde el JWT de Azure AD.
+ * Lee los datos del usuario desde el JWT.
  *
- * <p>Existe para que ningún otro punto del código tenga que saber en qué claim viene cada dato.
- * Azure AD emite claims distintos según el tipo de cuenta y la configuración del tenant, así que
- * acá se prueba una cadena de alternativas configurable.</p>
+ * <p>Azure AD emite claims distintos según el tipo de cuenta, así que se prueba una cadena de
+ * alternativas configurable. Nadie más necesita saber en qué claim viene cada dato.</p>
  */
 public class TokenClaims {
 
@@ -20,34 +19,18 @@ public class TokenClaims {
         this.propiedades = propiedades;
     }
 
-    /**
-     * Devuelve el identificador único e inmutable del usuario dentro del tenant.
-     *
-     * <p>Es el claim {@code oid}. Se prefiere sobre el correo porque el correo puede cambiar
-     * (por matrimonio, corrección de nombre, cambio de rol) y el {@code oid} no. Si el token no
-     * lo trae, se cae al {@code sub}, que cumple la misma función.</p>
-     */
+    /** El claim {@code oid}: nunca cambia, a diferencia del correo. Si falta, se usa {@code sub}. */
     public Optional<String> oid(Jwt token) {
         return primerClaimConTexto(token, List.of("oid", "sub"));
     }
 
-    /**
-     * Devuelve el correo institucional del usuario.
-     *
-     * <p>Busca en los claims configurados en {@code duocconecta.seguridad.claims-correo},
-     * en orden.</p>
-     */
+    /** Busca en los claims de {@code duocconecta.seguridad.claims-correo}, en orden. */
     public Optional<String> correo(Jwt token) {
         return primerClaimConTexto(token, propiedades.getClaimsCorreo())
                 .map(correo -> correo.trim().toLowerCase(java.util.Locale.ROOT));
     }
 
-    /**
-     * Devuelve el nombre para mostrar del usuario.
-     *
-     * <p>Si el token no trae ningún claim de nombre, se usa la parte local del correo como
-     * respaldo, para que el perfil nunca quede sin nombre.</p>
-     */
+    /** Si el token no trae nombre, se usa la parte local del correo. */
     public String nombre(Jwt token) {
         return primerClaimConTexto(token, propiedades.getClaimsNombre())
                 .orElseGet(() -> correo(token)
@@ -55,11 +38,7 @@ public class TokenClaims {
                         .orElse("Usuario sin nombre"));
     }
 
-    /**
-     * Devuelve los App Roles que Azure AD asignó al usuario, si el tenant los usa.
-     *
-     * <p>Puede venir vacío: en ese caso el rol se deriva del dominio del correo.</p>
-     */
+    /** Puede venir vacío; entonces el rol sale del dominio del correo. */
     public List<String> rolesDelToken(Jwt token) {
         Object valor = token.getClaim(propiedades.getClaimRoles());
         if (valor instanceof Collection<?> coleccion) {

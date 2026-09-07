@@ -3,11 +3,9 @@ package cl.duoc.duocconecta.comun.seguridad;
 import java.io.Serial;
 
 /**
- * Se lanza cuando el token es válido pero no trae ningún claim con el correo del usuario.
+ * El token es válido pero no trae el correo. Sin correo no hay rol, así que se responde 403.
  *
- * <p>Casi siempre significa que falta configurar los claims opcionales del access token en el
- * registro de la aplicación en Azure AD. Sin correo no se puede determinar el rol, así que la
- * petición se rechaza con 403.</p>
+ * <p>Casi siempre faltan los claims opcionales del access token en el registro de Azure AD.</p>
  */
 public class CorreoNoPresenteException extends RuntimeException {
 

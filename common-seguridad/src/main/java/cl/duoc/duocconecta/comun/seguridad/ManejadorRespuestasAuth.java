@@ -12,24 +12,16 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
 /**
- * Respuestas de error de autenticación y autorización, con mensajes claros en español.
+ * Respuestas de 401 y 403 con un mensaje que se entienda.
  *
- * <p>Sin esto, Spring devuelve un 401 y un 403 con el cuerpo vacío y quien integra el frontend no
- * tiene forma de saber si el problema fue el token, la audiencia o el rol.</p>
- *
- * <p>El JSON se arma a mano en vez de usar un serializador para no acoplar este módulo compartido
- * a una versión concreta de Jackson. Los textos son constantes del código, así que no hay riesgo
- * de romper el formato.</p>
+ * <p>Spring las devuelve con el cuerpo vacío, y desde el frontend no hay forma de saber si falló
+ * el token, la audiencia o el rol. El JSON se arma a mano para no atar este módulo compartido a
+ * una versión de Jackson.</p>
  */
 @Configuration
 public class ManejadorRespuestasAuth {
 
-    /**
-     * Respuesta cuando la petición llega sin token o con un token inválido.
-     *
-     * <p>Devuelve 401 e incluye la cabecera {@code WWW-Authenticate}, como pide el estándar de
-     * Bearer tokens.</p>
-     */
+    /** Sin token o con uno inválido: 401 con la cabecera {@code WWW-Authenticate} que pide el estándar. */
     @Bean
     public AuthenticationEntryPoint puntoDeEntradaNoAutenticado() {
         return (peticion, respuesta, excepcion) -> escribirProblema(
@@ -41,12 +33,7 @@ public class ManejadorRespuestasAuth {
                         + "y enviá el token en la cabecera Authorization: Bearer <token>.");
     }
 
-    /**
-     * Respuesta cuando el token es válido pero el usuario no tiene permiso.
-     *
-     * <p>Cubre dos casos: el rol no alcanza para el endpoint, o el correo pertenece a un dominio
-     * que no está autorizado en la plataforma.</p>
-     */
+    /** Token válido sin permiso: o el rol no alcanza, o el dominio no está autorizado. */
     @Bean
     public AccessDeniedHandler manejadorAccesoDenegado() {
         return (peticion, respuesta, excepcion) -> escribirProblema(
@@ -59,9 +46,7 @@ public class ManejadorRespuestasAuth {
                         + "para este recurso.");
     }
 
-    /**
-     * Escribe el cuerpo del error con el formato de Problem Details (RFC 9457).
-     */
+    /** Cuerpo con el formato Problem Details (RFC 9457). */
     private void escribirProblema(HttpServletRequest peticion,
                                   HttpServletResponse respuesta,
                                   HttpStatus estado,

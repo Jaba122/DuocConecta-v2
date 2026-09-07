@@ -124,8 +124,9 @@ Se difieren a EP2/EP3.
 | Fase | Qué | Estado |
 |---|---|---|
 | **1** | Monorepo, `common-seguridad`, `ms-usuarios`, `bff-web`, PostgreSQL, Swagger, tests | Construida |
-| **2** | `frontend-web` React + Vite con MSAL (Authorization Code + PKCE) | Pendiente |
-| **3** | `ms-proyectos` (CRUD) + agregación en el BFF → llena la vitrina | Pendiente |
+| **2** | `frontend-web` React + Vite con MSAL (Authorization Code + PKCE) | Construida |
+| **3** | `ms-proyectos` (CRUD) + agregación en el BFF → llena la vitrina | Construida |
+| **4** | `ms-contacto` (solicitudes de colaboración, HU-17 a HU-20) + agregación en el BFF | Construida |
 
 El objetivo de la demo es: **login institucional → IDaaS → vitrina de proyectos con el perfil del
 usuario relleno**. El frontend SÍ es parte del alcance, solo va después del backend.
@@ -203,9 +204,23 @@ DuocConecta/
 ├── docs/azure-entra-id.md  # guía de configuración del IDaaS
 ├── common-seguridad/       # validación de JWT compartida (audiencia, roles, dominios)
 ├── ms-usuarios/            # puerto 8081, schema `usuarios`
+├── ms-proyectos/           # puerto 8082, schema `proyectos`  — vitrina de proyectos
+├── ms-contacto/            # puerto 8083, schema `contacto`   — solicitudes de colaboración
 ├── bff-web/                # puerto 8080
-└── frontend-web/           # Fase 2 — React + Vite (no es módulo Maven)
+└── frontend-web/           # React + Vite (no es módulo Maven)
 ```
+
+**Frontend.** Dos pantallas dentro de la aplicación (`Vitrina` y `Perfil`) más el diagnóstico del
+token, que vive en el menú de la cuenta. Las solicitudes de colaboración están **dentro de Perfil**
+y no en una vista aparte: son datos personales, no de la vitrina. El diseño sigue al prototipo
+aprobado y vive en clases de `estilos.css`, nunca en estilos en línea. `catalogo.js` concentra
+carreras, sedes, estados e iniciales: es el archivo que se cambia cuando llegue el listado oficial
+de carreras de la sede Viña del Mar.
+
+`ms-proyectos` y `ms-contacto` nacieron como repositorios aparte (`ms-repositorios` y
+`ms-contacto`) y se integraron al monorepo: se les cambió el paquete a `cl.duoc.duocconecta.*`, se
+les borró la seguridad propia para que usen `common-seguridad`, se pasaron sus rutas a `/api/v1` y
+sus tablas a Flyway. `ms-publicaciones` (biblioteca de recursos y prompts) queda para la EP2.
 
 **Sobre `common-seguridad`:** el validador de audiencia, el conversor de roles y el mapa dominio→rol
 son idénticos en `ms-usuarios` y `bff-web`, y los microservicios que vienen (`ms-proyectos`,
@@ -248,6 +263,44 @@ Ver `README.md` para las variables de entorno y `docs/azure-entra-id.md` para co
 | `GET /api/v1/usuarios/{id}` | Perfil público (sin telefono/redes; respeta `visible`) | autenticado |
 | `GET /api/v1/usuarios?carrera=&sede=` | Listado público de perfiles visibles, con filtros | autenticado |
 
+## 9.1 Endpoints de `ms-proyectos` y `ms-contacto`
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /api/v1/proyectos` | Publica un proyecto en la vitrina |
+| `GET /api/v1/proyectos` | Lista los proyectos visibles |
+| `GET /api/v1/proyectos/{id}` | Detalle de un proyecto |
+| `PUT /api/v1/proyectos/{id}` | Edita o cambia la visibilidad; solo el propietario (HU-11) |
+| `DELETE /api/v1/proyectos/{id}` | Lo borra; solo el propietario |
+| `GET /api/v1/proyectos/{id}/comentarios` | Hilo de comentarios |
+| `POST /api/v1/proyectos/{id}/comentarios` | Comenta; comentar no comparte datos de contacto |
+| `POST /api/v1/colaboraciones` | Pide contacto a otra persona |
+| `PATCH /api/v1/colaboraciones/{id}/responder` | Acepta o rechaza; solo el destinatario |
+| `GET /api/v1/colaboraciones/recibidas` | Bandeja de entrada |
+| `GET /api/v1/colaboraciones/enviadas` | Bandeja de salida, con los datos ya compartidos |
+
+### Lo que el frontend le pide al BFF y no a los microservicios
+
+| Ruta del BFF | Por qué existe |
+|---|---|
+| `GET /api/v1/bff/mi-perfil` | Junta el perfil y las redes en una sola llamada |
+| `GET /api/v1/bff/vitrina` | Suma a cada proyecto **quién lo publicó** (nombre, carrera, sede), que ms-proyectos no sabe. Es lo que permite filtrar la vitrina por carrera |
+| `GET`/`POST /api/v1/bff/vitrina/{id}/comentarios` | Suma el nombre de quien escribió cada comentario |
+| `/api/v1/bff/colaboraciones/**` | Al aceptar, el BFF lee el perfil de quien acepta y arma con él los datos de contacto, en vez de pedirle que los escriba a mano |
+
+Publicar, editar y borrar un proyecto sí van directo a `ms-proyectos`: ahí no hay nada que
+componer y pasar por el BFF sería una capa de más. La traducción de identificador a persona la
+hace `ResolvedorAutores`, que consulta `GET /api/v1/usuarios/por-oid/{oid}` una vez por persona y
+no una por fila, y **no cachea entre peticiones**: un dato guardado de más sobreviviría a que
+alguien se ocultara.
+
+### Modelo de proyecto
+
+`resumen` es la línea que se lee en la tarjeta; `descripcion` es el detalle completo.
+`herramientas` es texto libre y se llama así —no "stack"— a propósito: DuocConecta es de toda la
+comunidad, y un proyecto de Diseño lista Figma y uno de Administración lista Excel igual que uno
+de Informática lista React. Una lista cerrada dejaría carreras fuera.
+
 "Público" significa **sin datos de contacto**, no sin autenticación: la propuesta de arquitectura
 pide validación de JWT en cada capa. Solo `/actuator/health`, `/swagger-ui/**` y `/v3/api-docs/**`
 quedan abiertos.
@@ -260,7 +313,8 @@ Receta para que un módulo nuevo encaje sin retrabajo. `ms-proyectos` es el prim
 
 | Qué | Valor |
 |---|---|
-| Puerto | `ms-proyectos` → **8082**; el siguiente, 8083 |
+| Puerto | `ms-usuarios` 8081 · `ms-proyectos` 8082 · `ms-contacto` 8083; el siguiente, 8084 |
+| Migraciones | `V1..V899` son cambios de esquema; **`V900+` son datos de ejemplo** y solo se cargan con el perfil `dev`. Por eso `ms-proyectos` lleva `out-of-order: true` en ese perfil: una migración real nueva siempre queda "atrasada" respecto de los datos de ejemplo ya aplicados. En la nube el perfil `dev` no se activa nunca |
 | Schema propio | **`proyectos`** (ya creado en `docker/postgres/init.sql`) |
 | Paquete raíz | `cl.duoc.duocconecta.proyectos` |
 | Prefijo de rutas | `/api/v1/proyectos` |
@@ -292,11 +346,27 @@ en el repo, se despliega con `make desplegar SERVICIO=ms-proyectos`.
 ## 11. Infraestructura y despliegue
 
 ```
-localhost:5173     API Gateway HTTP API      ALB          ECS Fargate — 1 tarea, 3 contenedores
+localhost:5173     API Gateway HTTP API      ALB          ECS Fargate — 1 tarea, 4 contenedores
    (front)     →   (validación de JWT)   →  (rutas)  →    ├── bff-web      :8080
                                                           ├── ms-usuarios  :8081  → RDS PostgreSQL
-                                                          └── ms-proyectos :8082
+                                                          ├── ms-proyectos :8082
+                                                          └── ms-contacto  :8083
 ```
+
+Con cuatro JVM en la misma tarea hay tres cosas que **no se ajustan solas** y que costaron un
+despliegue entero de depuración:
+
+| Qué | Valor | Por qué |
+|---|---|---|
+| Memoria | 2 vCPU / 4 GB de tarea, tope de 1 GB por contenedor | El heap lo acota la imagen con `MaxRAMPercentage`. Sin topes, la primera JVM en arrancar se queda con casi toda la RAM y las demás mueren |
+| Período de gracia del health check | **420 s**, no los 240 s iniciales | ECS mata la tarea entera si **cualquiera** de los cuatro target groups la ve enferma al vencer la gracia. Con tres servicios corriendo Flyway al arrancar, la última en levantar se llevaba puestas a las otras tres |
+| Timeout del health check | **15 s**, no los 5 s por defecto | Con el recolector serie y la CPU compartida, una pausa de GC hace que `/actuator/health` tarde más de 5 s y el ALB da el destino por muerto aunque la aplicación esté viva |
+
+**La trampa más cara:** el security group de las tareas abría los puertos con una lista escrita a
+mano (`for p in 8080 8081 8082`). Al sumar `ms-contacto` en el 8083, el ALB no podía alcanzarlo:
+los paquetes se descartaban en el security group, así que el contenedor arrancaba perfecto, los
+registros no mostraban ni un error, y el único síntoma era un health check en `Target.Timeout`.
+Ahora los puertos salen de `SERVICIOS`, así que sumar un microservicio abre su puerto solo.
 
 Corre en **AWS Academy Learner Lab**, lo que impone tres cosas:
 

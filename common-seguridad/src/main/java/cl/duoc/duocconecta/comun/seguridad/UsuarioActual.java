@@ -6,11 +6,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
- * Punto único para obtener los datos del usuario autenticado.
+ * Punto único para obtener al usuario autenticado.
  *
- * <p>La identidad se toma siempre del token, nunca de un parámetro de la petición. Si el cliente
- * pudiera mandar su propio {@code oid} o correo, cualquiera podría leer o modificar el perfil
- * ajeno con solo cambiar un valor en la URL.</p>
+ * <p>La identidad sale siempre del token, nunca de la petición: si el cliente pudiera mandar su
+ * propio {@code oid}, cualquiera editaría el perfil ajeno cambiando un valor en la URL.</p>
  */
 public class UsuarioActual {
 
@@ -23,13 +22,8 @@ public class UsuarioActual {
     }
 
     /**
-     * Devuelve la identidad del usuario que hizo la petición, ya validada.
-     *
-     * @return los datos del usuario tomados del token
-     * @throws IllegalStateException si no hay un token en el contexto (no debería pasar:
-     *         la cadena de seguridad ya habría respondido 401)
-     * @throws CorreoNoPresenteException si el token no trae el correo
-     * @throws DominioNoPermitidoException si el dominio del correo no está autorizado
+     * @throws CorreoNoPresenteException si el token no trae correo
+     * @throws DominioNoPermitidoException si el dominio no está autorizado
      */
     public IdentidadUsuario obtener() {
         Jwt token = tokenActual();
@@ -48,9 +42,7 @@ public class UsuarioActual {
         return new IdentidadUsuario(oid, correo, tokenClaims.nombre(token), rol);
     }
 
-    /**
-     * Devuelve el token crudo de la petición en curso.
-     */
+    /** El token crudo de la petición en curso. */
     public Jwt tokenActual() {
         Authentication autenticacion = SecurityContextHolder.getContext().getAuthentication();
         if (autenticacion instanceof JwtAuthenticationToken jwtAuth) {
@@ -60,14 +52,7 @@ public class UsuarioActual {
                 "No hay un token JWT en el contexto de seguridad para la petición en curso.");
     }
 
-    /**
-     * Datos del usuario autenticado, ya extraídos y validados desde el token.
-     *
-     * @param oid    identificador inmutable del usuario en el tenant (claim {@code oid})
-     * @param correo correo institucional en minúsculas
-     * @param nombre nombre para mostrar
-     * @param rol    rol derivado de los App Roles o del dominio del correo
-     */
+    /** Datos del usuario, ya extraídos y validados desde el token. */
     public record IdentidadUsuario(String oid, String correo, String nombre, Rol rol) {
     }
 }
