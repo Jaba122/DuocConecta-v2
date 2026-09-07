@@ -65,7 +65,8 @@ public class SolicitudController {
             description = "Queda PENDIENTE hasta que la otra parte responda. No se comparte ningún dato todavía.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Solicitud enviada"),
-            @ApiResponse(responseCode = "403", description = "Solicitud a uno mismo o ya hay una pendiente", content = @Content),
+            @ApiResponse(responseCode = "400", description = "Solicitud a uno mismo", content = @Content),
+            @ApiResponse(responseCode = "409", description = "Ya hay una solicitud pendiente a esa persona", content = @Content),
             @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @Content)
     })
     @PostMapping
@@ -85,7 +86,8 @@ public class SolicitudController {
             description = "Solo responde la persona destinataria, y una sola vez. Al aceptar se comparten sus datos de contacto; al rechazar, ninguno.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Solicitud respondida"),
-            @ApiResponse(responseCode = "403", description = "No eres el destinatario, o ya fue respondida", content = @Content),
+            @ApiResponse(responseCode = "403", description = "No eres el destinatario", content = @Content),
+            @ApiResponse(responseCode = "409", description = "La solicitud ya fue respondida", content = @Content),
             @ApiResponse(responseCode = "404", description = "La solicitud no existe", content = @Content)
     })
     @PatchMapping("/{id}/responder")

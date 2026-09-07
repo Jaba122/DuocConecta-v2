@@ -65,16 +65,36 @@ class MsContactoApplicationTests {
                 .andExpect(status().isForbidden());
     }
 
-    /** Pedirse contacto a uno mismo no tiene sentido y se rechaza. */
+    /** Pedirse contacto a uno mismo no tiene sentido: es la petición la que está mal, no el permiso. */
     @Test
-    @DisplayName("Solicitar contacto a uno mismo responde 403")
+    @DisplayName("Solicitar contacto a uno mismo responde 400")
     void noSePuedeSolicitarASiMismo() throws Exception {
         String yo = "oid-carla.soto@duocuc.cl";
         mockMvc.perform(post("/api/v1/colaboraciones")
                         .with(tokenDe("carla.soto@duocuc.cl"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"solicitadoId\": \"" + yo + "\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isBadRequest());
+    }
+
+    /** Dos solicitudes seguidas a la misma persona: la segunda es 409, no 403. */
+    @Test
+    @DisplayName("Repetir una solicitud pendiente responde 409 y no 403")
+    void solicitudRepetidaResponde409() throws Exception {
+        RequestPostProcessor quienPide = tokenDe("luis.rojas@duocuc.cl");
+        String cuerpo = """
+                {
+                  "solicitadoId": "oid-marta.diaz@duocuc.cl",
+                  "mensaje": "Me sumo"
+                }""";
+
+        mockMvc.perform(post("/api/v1/colaboraciones").with(quienPide)
+                        .contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/colaboraciones").with(quienPide)
+                        .contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isConflict());
     }
 
     /**
@@ -140,12 +160,13 @@ class MsContactoApplicationTests {
                 .andExpect(jsonPath("$[?(@.id == '" + id + "')].telefonoCompartido[0]")
                         .doesNotExist());
 
-        // Una solicitud ya respondida no se responde de nuevo.
+        // Una solicitud ya respondida no se responde de nuevo. Es 409 y no 403: quien responde
+        // sí tiene permiso, lo que ya no está disponible es el estado pendiente.
         mockMvc.perform(patch("/api/v1/colaboraciones/" + id + "/responder")
                         .with(solicitado)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"aceptar\": false}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isConflict());
     }
 
     /**

@@ -45,9 +45,22 @@ public class GlobalExceptionHandler {
         return construir(HttpStatus.NOT_FOUND, ex.getMessage(), List.of());
     }
 
+    /** Falta de permiso de verdad: la acción es de otra persona. */
     @ExceptionHandler(OperacionNoPermitidaException.class)
     public ResponseEntity<ApiError> manejarNoPermitido(OperacionNoPermitidaException ex) {
         return construir(HttpStatus.FORBIDDEN, ex.getMessage(), List.of());
+    }
+
+    /** Choca con el estado actual, no con los permisos: 409 y no 403. */
+    @ExceptionHandler(ConflictoDeEstadoException.class)
+    public ResponseEntity<ApiError> manejarConflicto(ConflictoDeEstadoException ex) {
+        return construir(HttpStatus.CONFLICT, ex.getMessage(), List.of());
+    }
+
+    /** La petición en sí no tiene sentido. */
+    @ExceptionHandler(SolicitudInvalidaException.class)
+    public ResponseEntity<ApiError> manejarSolicitudInvalida(SolicitudInvalidaException ex) {
+        return construir(HttpStatus.BAD_REQUEST, ex.getMessage(), List.of());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

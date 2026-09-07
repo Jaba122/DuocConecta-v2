@@ -5,8 +5,10 @@ import cl.duoc.duocconecta.contacto.domain.SolicitudContacto;
 import cl.duoc.duocconecta.contacto.dto.RespuestaSolicitudDTO;
 import cl.duoc.duocconecta.contacto.dto.SolicitudRequestDTO;
 import cl.duoc.duocconecta.contacto.dto.SolicitudResponseDTO;
+import cl.duoc.duocconecta.contacto.exception.ConflictoDeEstadoException;
 import cl.duoc.duocconecta.contacto.exception.OperacionNoPermitidaException;
 import cl.duoc.duocconecta.contacto.exception.RecursoNoEncontradoException;
+import cl.duoc.duocconecta.contacto.exception.SolicitudInvalidaException;
 import cl.duoc.duocconecta.contacto.repository.SolicitudRepository;
 import java.time.Instant;
 import java.util.List;
@@ -31,14 +33,14 @@ public class SolicitudService {
     @Transactional
     public SolicitudResponseDTO crear(SolicitudRequestDTO dto, String solicitanteId) {
         if (solicitanteId.equals(dto.solicitadoId())) {
-            throw new OperacionNoPermitidaException("No puedes solicitar contacto contigo mismo");
+            throw new SolicitudInvalidaException("No puedes solicitar contacto contigo mismo");
         }
 
         solicitudRepository.findBySolicitanteIdAndSolicitadoIdAndEstado(
                         solicitanteId, dto.solicitadoId(), EstadoSolicitud.PENDIENTE)
                 .ifPresent(s -> {
-                    throw new OperacionNoPermitidaException(
-                            "Ya existe una solicitud pendiente a este usuario");
+                    throw new ConflictoDeEstadoException(
+                            "Ya le enviaste una solicitud a esta persona y sigue pendiente");
                 });
 
         SolicitudContacto solicitud = SolicitudContacto.builder()
@@ -68,7 +70,7 @@ public class SolicitudService {
                     "Solo el usuario solicitado puede responder esta solicitud");
         }
         if (solicitud.getEstado() != EstadoSolicitud.PENDIENTE) {
-            throw new OperacionNoPermitidaException("Esta solicitud ya fue respondida");
+            throw new ConflictoDeEstadoException("Esta solicitud ya fue respondida");
         }
 
         if (respuesta.aceptar()) {
