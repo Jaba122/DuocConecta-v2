@@ -24,7 +24,7 @@ PROYECTO="duocconecta"
 CLUSTER="$PROYECTO"
 SERVICIO_ECS="$PROYECTO"
 FAMILIA="$PROYECTO"
-SERVICIOS=(ms-usuarios bff-web ms-proyectos)
+SERVICIOS=(ms-usuarios bff-web ms-proyectos ms-contacto)
 
 # Los nombres se declaran acá y no se repiten sueltos por el script. Están pensados para que
 # quien mire la consola de AWS entienda de una qué papel cumple cada recurso: la evaluación
@@ -40,6 +40,7 @@ puerto_de() {
     bff-web)      echo 8080 ;;
     ms-usuarios)  echo 8081 ;;
     ms-proyectos) echo 8082 ;;
+    ms-contacto)  echo 8083 ;;
   esac
 }
 
@@ -49,6 +50,7 @@ ruta_de() {
     bff-web)      echo "/api/v1/bff*" ;;
     ms-usuarios)  echo "/api/v1/usuarios*" ;;
     ms-proyectos) echo "/api/v1/proyectos*" ;;
+    ms-contacto)  echo "/api/v1/colaboraciones*" ;;
   esac
 }
 
@@ -138,7 +140,11 @@ cmd_crear() {
 
   # El ALB acepta HTTP de cualquiera; las tareas solo del ALB; la base solo de las tareas.
   aws ec2 authorize-security-group-ingress --group-id "$sg_alb" --protocol tcp --port 80 --cidr 0.0.0.0/0 >/dev/null 2>&1 || true
-  for p in 8080 8081 8082; do
+  # Los puertos salen de SERVICIOS, no de una lista a mano: al sumar ms-contacto su puerto
+  # quedó fuera y el ALB no lo alcanzaba. Síntoma engañoso: el contenedor arrancaba bien y el
+  # health check daba timeout, porque los paquetes morían en el security group.
+  for s_puerto in "${SERVICIOS[@]}"; do
+    p=$(puerto_de "$s_puerto")
     aws ec2 authorize-security-group-ingress --group-id "$sg_tareas" --protocol tcp --port "$p" --source-group "$sg_alb" >/dev/null 2>&1 || true
   done
   aws ec2 authorize-security-group-ingress --group-id "$sg_rds" --protocol tcp --port 5432 --source-group "$sg_tareas" >/dev/null 2>&1 || true
@@ -175,9 +181,15 @@ cmd_crear() {
     if [[ -z "$tg" || "$tg" == "None" ]]; then
       tg=$(aws elbv2 create-target-group --name "$PROYECTO-$s" --protocol HTTP --port "$(puerto_de "$s")" \
         --vpc-id "$vpc" --target-type ip --health-check-path /actuator/health \
-        --health-check-interval-seconds 30 --healthy-threshold-count 2 \
+        --health-check-interval-seconds 30 --health-check-timeout-seconds 15 \
+        --healthy-threshold-count 2 --unhealthy-threshold-count 3 \
         --query 'TargetGroups[0].TargetGroupArn' --output text)
     fi
+    # Timeout de 15s y no los 5 por defecto: con cuatro JVM en 2 vCPU y recolector serie, una
+    # pausa de GC hace que /actuator/health tarde más de 5s y el ALB da el destino por muerto.
+    aws elbv2 modify-target-group --target-group-arn "$tg" \
+      --health-check-timeout-seconds 15 --health-check-interval-seconds 30 \
+      --healthy-threshold-count 2 --unhealthy-threshold-count 3 >/dev/null 2>&1 || true
     ok "target group $PROYECTO-$s → :$(puerto_de "$s")"
   done
 
@@ -188,7 +200,7 @@ cmd_crear() {
     listener_arn=$(aws elbv2 create-listener --load-balancer-arn "$alb_arn" --protocol HTTP --port 80 \
       --default-actions "Type=forward,TargetGroupArn=$tg_bff" --query 'Listeners[0].ListenerArn' --output text)
   fi
-  for s in ms-usuarios ms-proyectos; do
+  for s in ms-usuarios ms-proyectos ms-contacto; do
     local tg; tg=$(aws elbv2 describe-target-groups --names "$PROYECTO-$s" --query 'TargetGroups[0].TargetGroupArn' --output text)
     aws elbv2 create-rule --listener-arn "$listener_arn" --priority "$prioridad" \
       --conditions "Field=path-pattern,Values=$(ruta_de "$s")" \
@@ -224,7 +236,7 @@ EOV
 # build — compila la imagen de un servicio y la sube a ECR.
 # ---------------------------------------------------------------------------
 cmd_build() {
-  local s="${1:?Uso: aws.sh build <ms-usuarios|bff-web|ms-proyectos>}"
+  local s="${1:?Uso: aws.sh build <ms-usuarios|bff-web|ms-proyectos|ms-contacto>}"
   [[ -d "$RAIZ/$s" ]] || { falla "El módulo $s todavía no existe en el repo"; exit 1; }
   local reg; reg=$(registro)
 
@@ -269,12 +281,15 @@ cmd_desplegar() {
       "$RAIZ/infra/task-definition.json" > "$tmp"
 
   # Se quita el bloque de comentarios (ECS rechaza campos que no conoce) y, si la imagen de
-  # ms-proyectos todavía no está en ECR, se quita ese contenedor para no bloquear el despliegue.
+  # algún servicio todavía no está en ECR, se quita ese contenedor para no bloquear el despliegue:
+  # el contenedor es essential, así que sin imagen la tarea entera no arrancaría.
   local filtro='del(._comentario)'
-  if ! aws ecr describe-images --repository-name "$PROYECTO/ms-proyectos" --image-ids imageTag=latest >/dev/null 2>&1; then
-    aviso "ms-proyectos aún no está en ECR: se despliega sin ese contenedor"
-    filtro="$filtro | .containerDefinitions |= map(select(.name != \"ms-proyectos\"))"
-  fi
+  for s in "${SERVICIOS[@]}"; do
+    if ! aws ecr describe-images --repository-name "$PROYECTO/$s" --image-ids imageTag=latest >/dev/null 2>&1; then
+      aviso "$s aún no está en ECR: se despliega sin ese contenedor"
+      filtro="$filtro | .containerDefinitions |= map(select(.name != \"$s\"))"
+    fi
+  done
   jq "$filtro" "$tmp" > "$tmp.json" && mv "$tmp.json" "$tmp"
 
   local rev; rev=$(aws ecs register-task-definition --cli-input-json "file://$tmp" \
@@ -287,23 +302,27 @@ cmd_desplegar() {
   for s in "${SERVICIOS[@]}"; do
     local tg; tg=$(aws elbv2 describe-target-groups --names "$PROYECTO-$s" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)
     [[ -z "$tg" || "$tg" == "None" ]] && continue
-    [[ "$s" == "ms-proyectos" && ! -d "$RAIZ/ms-proyectos" ]] && continue
+    [[ -d "$RAIZ/$s" ]] || continue
     lb_args+=("targetGroupArn=$tg,containerName=$s,containerPort=$(puerto_de "$s")")
   done
 
-  # El período de gracia es imprescindible: el ALB empieza a chequear salud apenas registra la
-  # tarea, pero Spring Boot tarda cerca de un minuto en levantar. Sin gracia, ECS mata la tarea
-  # por "unhealthy" antes de que llegue a responder y el despliegue queda en un ciclo infinito.
+  # Sin período de gracia, ECS mata la tarea por "unhealthy" antes de que Spring Boot levante.
+  # Son 7 minutos y no 4 porque ECS mata la tarea entera si CUALQUIERA de los cuatro target
+  # groups la ve enferma al vencer: la última en arrancar se llevaba puestas a las otras tres.
   if aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICIO_ECS" \
        --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+    # Los balanceadores se redeclaran en cada actualización: al sumar un microservicio, su
+    # target group existe pero el servicio seguía registrando solo los viejos.
     aws ecs update-service --cluster "$CLUSTER" --service "$SERVICIO_ECS" \
-      --task-definition "$rev" --desired-count 1 --force-new-deployment >/dev/null
-    ok "servicio actualizado"
+      --task-definition "$rev" --desired-count 1 --force-new-deployment \
+      --health-check-grace-period-seconds 420 \
+      --load-balancers "${lb_args[@]}" >/dev/null
+    ok "servicio actualizado (${#lb_args[@]} servicios tras el balanceador)"
   else
     aws ecs create-service --cluster "$CLUSTER" --service-name "$SERVICIO_ECS" \
       --task-definition "$rev" --desired-count 1 --launch-type FARGATE \
       --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_TAREAS],assignPublicIp=ENABLED}" \
-      --health-check-grace-period-seconds 240 \
+      --health-check-grace-period-seconds 420 \
       --load-balancers "${lb_args[@]}" >/dev/null
     ok "servicio creado"
   fi
@@ -313,11 +332,9 @@ cmd_desplegar() {
 # ---------------------------------------------------------------------------
 # front — publica el frontend en S3 y lo deja accesible por HTTPS.
 #
-# Por qué pasa por el API Gateway y no se sirve S3 directo: Azure AD exige HTTPS en los URI de
-# redirección (solo perdona localhost), el sitio estático de S3 es HTTP puro, y CloudFront no está
-# habilitado en el laboratorio. El API Gateway resuelve las tres cosas de una vez: da HTTPS, deja
-# el front y la API bajo la misma dirección —así el navegador ni siquiera aplica CORS— y le da al
-# equipo una sola URL.
+# Pasa por el API Gateway y no se sirve S3 directo porque Azure AD exige HTTPS en los URI de
+# redirección, S3 es HTTP puro y CloudFront no está habilitado. El API Gateway da HTTPS y deja
+# el front y la API en el mismo origen, así el navegador ni siquiera aplica CORS.
 # ---------------------------------------------------------------------------
 cmd_front() {
   source "$RAIZ/infra/.recursos" 2>/dev/null || { falla "Falta correr 'aws.sh crear' primero"; exit 1; }
@@ -348,10 +365,8 @@ cmd_front() {
   # index.html también como página de error: la aplicación es de una sola página.
   aws s3 website "s3://$bucket" --index-document index.html --error-document index.html
 
-  # CORS en el bucket, además del que se declara en el API Gateway. Hace falta porque
-  # el API se creó en modo rápido y eso deja una ruta por defecto implícita que no se
-  # puede eliminar: el OPTIONS del preflight cae ahí, llega a S3, y sin esta
-  # configuración S3 lo rechaza con 403 y el navegador lo reporta como error de CORS.
+  # CORS también en el bucket: la ruta por defecto del API es implícita y no se puede borrar,
+  # así que el OPTIONS del preflight termina en S3 y sin esto responde 403.
   aws s3api put-bucket-cors --bucket "$bucket" --cors-configuration '{
     "CORSRules": [{
       "AllowedOrigins": ["http://localhost:5173"],
@@ -373,30 +388,43 @@ cmd_front() {
 
   azul "3/4 · Subiendo a S3"
   aws s3 sync "$RAIZ/frontend-web/dist" "s3://$bucket" --delete --only-show-errors
-  ok "subido"
+
+  # Caché: los archivos de assets llevan un hash en el nombre, así que cambian de nombre cuando
+  # cambia su contenido y se pueden cachear para siempre. El index.html NO: si el navegador se
+  # lo queda, sigue pidiendo los archivos del despliegue anterior aunque ya no existan.
+  aws s3 cp "s3://$bucket/index.html" "s3://$bucket/index.html" --metadata-directive REPLACE \
+    --content-type "text/html; charset=utf-8" --cache-control "no-cache, must-revalidate" \
+    --only-show-errors
+  # El tipo de contenido se repite porque REPLACE borra TODA la metadata: sin esto los .js y .css
+  # quedan como binary/octet-stream y el navegador los rechaza, con la página en blanco de síntoma.
+  aws s3 cp "s3://$bucket/assets/" "s3://$bucket/assets/" --recursive --exclude "*" --include "*.js" \
+    --metadata-directive REPLACE --content-type "text/javascript; charset=utf-8" \
+    --cache-control "public, max-age=31536000, immutable" --only-show-errors
+  aws s3 cp "s3://$bucket/assets/" "s3://$bucket/assets/" --recursive --exclude "*" --include "*.css" \
+    --metadata-directive REPLACE --content-type "text/css; charset=utf-8" \
+    --cache-control "public, max-age=31536000, immutable" --only-show-errors
+  ok "subido, con tipos de contenido y caché correctos"
 
   azul "4/4 · Configurando el API Gateway"
   cmd_apigw
 
+  # La URL del sitio se arma acá y no se toma de cmd_apigw: allá es una variable local
+  # y desde esta función no se ve, así que el script moría al final con "unbound variable"
+  # justo después de haber hecho bien todo el trabajo.
   grep -q '^SITIO_WEB=' "$RAIZ/infra/.recursos" 2>/dev/null \
-    || echo "SITIO_WEB=$sitio" >> "$RAIZ/infra/.recursos"
+    || echo "SITIO_WEB=http://$bucket.s3-website-$REGION.amazonaws.com" >> "$RAIZ/infra/.recursos"
   cmd_urls
 }
 
 # ---------------------------------------------------------------------------
-# apigw — configura el API Manager como intermediario real, no como simple proxy.
+# apigw — el API Manager como intermediario real, no como simple proxy. Hace tres cosas:
 #
-# Hace tres cosas que la evaluación pide de forma explícita:
+#   1. Una ruta por microservicio Y por método, no un comodín.
+#   2. Un validador de JWT propio, que comprueba emisor y audiencia ANTES del backend.
+#   3. CORS con orígenes concretos y sin comodines.
 #
-#   1. Una ruta por microservicio Y por método, no un comodín. Queda explícito a dónde
-#      va cada path y con qué verbo.
-#   2. Un validador de JWT propio del API Gateway, que comprueba emisor y audiencia
-#      ANTES de que la petición llegue al backend. Es una capa independiente de la que
-#      hacen el BFF y los microservicios por su cuenta.
-#   3. CORS declarado en el API Gateway, con orígenes concretos y sin comodines.
-#
-# El frontend y la ruta de salud quedan sin validación a propósito: si el validador
-# cubriera la ruta por defecto, el navegador no podría ni descargar la aplicación.
+# El frontend y la ruta de salud quedan abiertos: si el validador cubriera la ruta por
+# defecto, el navegador no podría ni descargar la aplicación.
 # ---------------------------------------------------------------------------
 cmd_apigw() {
   source "$RAIZ/infra/.recursos" 2>/dev/null || { falla "Falta correr 'aws.sh crear' primero"; exit 1; }
@@ -441,8 +469,8 @@ cmd_apigw() {
   ok "validador de JWT '$AUTH_NOMBRE': emisor y audiencia del tenant"
 
   # --- Rutas ----------------------------------------------------------------
-  # Devuelve la integración para un destino, creándola si hace falta. Se llama UNA vez
-  # por servicio y no una por método: si no, son veinte llamadas a la API por corrida.
+  # La integración de un destino, creándola si falta. Una vez por servicio y no por método:
+  # si no, son veinte llamadas a la API por corrida.
   # $1 = destino · $2 = descripción
   integracion() {
     local id
@@ -488,23 +516,31 @@ cmd_apigw() {
   done
   [[ $borradas -gt 0 ]] && aviso "$borradas rutas comodín anteriores eliminadas"
 
-  # Una ruta por servicio y por método. Se declaran los métodos reales en vez de ANY
-  # porque ANY también captura el OPTIONS del preflight de CORS, y el navegador no manda
-  # el token en esa petición: el validador la rechazaría y el navegador lo reportaría
-  # como bloqueo de CORS. Dejando OPTIONS fuera, el API Gateway responde el preflight solo.
+  # Métodos reales en vez de ANY: ANY también captura el OPTIONS del preflight, que viaja sin
+  # token. El validador lo rechazaría y el navegador lo reportaría como bloqueo de CORS.
   local servicios_api=(
     "bff|bff-web - respuestas agregadas para el frontend"
     "usuarios|ms-usuarios - perfiles, roles y visibilidad"
     "proyectos|ms-proyectos - vitrina de proyectos"
-    "colaboraciones|ms-usuarios - solicitudes de colaboracion"
+    "colaboraciones|ms-contacto - solicitudes de colaboracion con consentimiento"
   )
-  local integ
+  local integ integ_raiz
   for entrada in "${servicios_api[@]}"; do
     local path="${entrada%%|*}" desc="${entrada##*|}"
+
+    # Dos rutas por servicio: la colección en sí y todo lo que cuelga de ella.
+    # {proxy+} exige al menos un segmento más, así que sin la primera un
+    # GET /api/v1/proyectos (listar) o un POST (publicar) no encontrarían ruta.
+    integ_raiz=$(integracion "http://$dns/api/v1/$path" "$desc - coleccion")
+    for m in GET POST; do
+      ruta "$m /api/v1/$path" "$integ_raiz" jwt
+    done
+
     integ=$(integracion "http://$dns/api/v1/$path/{proxy}" "$desc")
     for m in GET POST PUT PATCH DELETE; do
       ruta "$m /api/v1/$path/{proxy+}" "$integ" jwt
     done
+    printf '     %-26s %s\n' "/api/v1/$path" "GET POST · requieren JWT"
     printf '     %-26s %s\n' "/api/v1/$path/*" "GET POST PUT PATCH DELETE · requieren JWT"
   done
 
@@ -512,20 +548,21 @@ cmd_apigw() {
   ruta 'ANY /actuator/{proxy+}' "$integ"
   printf '     %-26s %s\n' "/actuator/*" "abierta, para monitoreo"
 
-  # El frontend se sirve con rutas GET explícitas y NO con la ruta por defecto.
-  # Es la diferencia que hace funcionar el preflight de CORS: si existe una ruta por
-  # defecto, el OPTIONS del navegador cae ahí y termina en S3, que responde 403 porque
-  # no admite ese método. Sin ruta por defecto, el OPTIONS no coincide con nada y el
-  # API Gateway lo contesta por su cuenta, que es justo lo que se necesita.
-  integ=$(integracion "$sitio" "Frontend estatico en S3 - la aplicacion React")
+  # Rutas GET explícitas y no la ruta por defecto: así el OPTIONS del preflight no coincide
+  # con nada y lo contesta el propio API Gateway en vez de terminar en S3.
+  # DOS integraciones: la raíz al bucket pelado, y el resto arrastrando el path con {proxy}.
+  # Sin eso, /assets/index-XXX.js devolvía el index.html y la aplicación no arrancaba.
+  integ=$(integracion "$sitio" "Frontend estatico en S3 - pagina de entrada")
   ruta 'GET /' "$integ"
-  ruta 'GET /{proxy+}' "$integ"
-  printf '     %-26s %s\n' "GET / y GET /*" "frontend en S3, abierto"
 
-  # La ruta por defecto NO se intenta borrar: el API se creó en modo rápido con --target,
-  # y en esas APIs es implícita — AWS la recrea aunque se elimine. Queda apuntando al
-  # frontend, así que el OPTIONS del preflight termina en S3; por eso el bucket también
-  # lleva su configuración de CORS (ver cmd_front).
+  local integ_assets
+  integ_assets=$(integracion "$sitio/{proxy}" "Frontend estatico en S3 - archivos de la aplicacion React")
+  ruta 'GET /{proxy+}' "$integ_assets"
+  printf '     %-26s %s\n' "GET /" "frontend en S3, abierto"
+  printf '     %-26s %s\n' "GET /*" "archivos del frontend, abierto"
+
+  # La ruta por defecto no se borra: es implícita y AWS la recrea. Queda apuntando al frontend,
+  # y por eso el bucket lleva su propio CORS (ver cmd_front).
   printf '     %-26s %s\n' "por defecto" "frontend en S3 (implícita, no se puede quitar)"
 
   # --- Limpieza -------------------------------------------------------------
@@ -544,9 +581,8 @@ cmd_apigw() {
   [[ $huerfanas -gt 0 ]] && ok "$huerfanas integraciones sin uso eliminadas"
 
   # --- CORS -----------------------------------------------------------------
-  # Orígenes concretos, sin comodines. El API Gateway responde el preflight por su
-  # cuenta y sin pasarlo por el validador, que es justo lo que hace falta porque el
-  # navegador no manda el token en esa petición.
+  # Orígenes concretos, sin comodines. El preflight lo responde el API Gateway sin pasar por
+  # el validador, porque el navegador no manda el token en esa petición.
   aws apigatewayv2 update-api --api-id "$API_ID" --cors-configuration "{
     \"AllowOrigins\": [\"http://localhost:5173\", \"https://$API_ID.execute-api.$REGION.amazonaws.com\"],
     \"AllowMethods\": [\"GET\",\"POST\",\"PUT\",\"PATCH\",\"DELETE\",\"OPTIONS\"],
