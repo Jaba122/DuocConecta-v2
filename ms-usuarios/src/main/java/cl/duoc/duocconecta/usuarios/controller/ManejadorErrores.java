@@ -36,7 +36,7 @@ public class ManejadorErrores {
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         problema.setTitle("Dominio no autorizado");
         problema.setDetail("Tu correo no pertenece a un dominio institucional de Duoc UC. "
-                + "Entrá con tu cuenta @duocuc.cl, @profesor.duoc.cl o @duoc.cl.");
+                + "Entra con tu cuenta @duocuc.cl, @profesor.duoc.cl o @duoc.cl.");
         return problema;
     }
 
@@ -53,7 +53,7 @@ public class ManejadorErrores {
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         problema.setTitle("No se pudo determinar tu correo institucional");
         problema.setDetail("El token no incluye tu correo, así que no se puede asignar un rol. "
-                + "Avisá al equipo: falta configurar los claims opcionales del access token en Azure AD.");
+                + "Avisa al equipo: falta configurar los claims opcionales del access token en Azure AD.");
         return problema;
     }
 

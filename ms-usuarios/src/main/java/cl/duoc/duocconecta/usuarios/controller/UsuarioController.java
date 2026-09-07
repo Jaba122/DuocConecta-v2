@@ -69,13 +69,7 @@ public class UsuarioController {
      */
     @Operation(
             summary = "Obtiene o auto-provisiona el perfil propio",
-            description = """
-                    Devuelve el perfil de la persona autenticada. Si es su primer ingreso, lo crea
-                    automáticamente a partir de los claims del token (oid, correo y nombre) y le
-                    asigna el rol según el dominio de su correo institucional:
-                    @duocuc.cl es ESTUDIANTE, @profesor.duoc.cl es PROFESOR y @duoc.cl es ACADEMICO.
-                    Incluye los datos de contacto propios (teléfono y redes), que nunca aparecen en
-                    las respuestas públicas.""")
+            description = "Si es el primer ingreso lo crea con los claims del token y le asigna el rol según el dominio del correo. Incluye teléfono y redes, que nunca salen en las respuestas públicas.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Perfil obtenido o creado correctamente"),
             @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @io.swagger.v3.oas.annotations.media.Content),
@@ -99,12 +93,7 @@ public class UsuarioController {
      */
     @Operation(
             summary = "Actualiza el perfil propio",
-            description = """
-                    Modifica carrera, sede, biografía, teléfono y redes sociales de la persona
-                    autenticada: es donde completa lo que el login no pudo traer. El nombre, el
-                    correo, el rol y el identificador de Azure AD no se pueden cambiar porque vienen
-                    del token; el nombre además se resincroniza en cada ingreso. Devuelve el perfil
-                    ya actualizado.""")
+            description = "Modifica carrera, sede, biografía, teléfono y redes. El nombre, el correo y el rol vienen del token y no se pueden cambiar.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Perfil actualizado"),
             @ApiResponse(responseCode = "400", description = "Los datos enviados no pasaron la validación", content = @io.swagger.v3.oas.annotations.media.Content),
@@ -128,11 +117,7 @@ public class UsuarioController {
      */
     @Operation(
             summary = "Alterna la visibilidad del perfil propio",
-            description = """
-                    Cambia la visibilidad del perfil al estado contrario: si estaba visible lo
-                    oculta, y si estaba oculto lo vuelve a mostrar. Ocultarse no borra el perfil ni
-                    sus datos, solo lo saca de las búsquedas y listados públicos. Devuelve el nuevo
-                    estado junto con una explicación en palabras.""")
+            description = "Ocultarse no borra nada: solo saca el perfil de las búsquedas y los listados.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Visibilidad actualizada"),
             @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @io.swagger.v3.oas.annotations.media.Content),
@@ -154,11 +139,7 @@ public class UsuarioController {
      */
     @Operation(
             summary = "Devuelve las redes sociales del usuario autenticado",
-            description = """
-                    Entrega los enlaces a redes sociales que la propia persona cargó en su perfil.
-                    Solo devuelve las propias: las de terceros son datos de contacto privados y
-                    quedarán sujetas al consentimiento mutuo. El listado puede venir vacío si la
-                    persona todavía no cargó ninguna.""")
+            description = "Solo las propias: las de terceros son datos privados sujetos al consentimiento.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Listado de redes del usuario autenticado"),
             @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @io.swagger.v3.oas.annotations.media.Content),
@@ -181,11 +162,7 @@ public class UsuarioController {
      */
     @Operation(
             summary = "Obtiene el perfil público de un usuario",
-            description = """
-                    Devuelve el perfil de otra persona tal como lo ve la comunidad: nombre, rol,
-                    carrera, sede y biografía. Nunca incluye teléfono ni redes sociales, que son
-                    datos de contacto privados. Si la persona ocultó su perfil se responde 404,
-                    igual que si no existiera, para no revelar que está en la plataforma.""")
+            description = "Nunca incluye teléfono ni redes. Si la persona se ocultó responde 404, para no revelar que está en la plataforma.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Perfil público encontrado"),
             @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @io.swagger.v3.oas.annotations.media.Content),
@@ -196,6 +173,31 @@ public class UsuarioController {
             @Parameter(description = "Identificador del perfil a consultar")
             @PathVariable UUID id) {
         return ResponseEntity.ok(servicio.buscarPerfilPublico(id));
+    }
+
+    /**
+     * Devuelve el perfil público a partir del identificador de Azure AD.
+     *
+     * <p>Los demás servicios guardan el {@code oid} del token, no el id interno de este
+     * microservicio. Sin esta ruta, un proyecto o una solicitud solo pueden mostrar un
+     * identificador opaco en vez del nombre de la persona.</p>
+     *
+     * @param oid identificador de la persona en Azure AD
+     * @return 200 con el perfil público
+     */
+    @Operation(
+            summary = "Obtiene el perfil público por identificador de Azure AD",
+            description = "Igual que por id, pero con el oid del token. Es la que usa el BFF para traducir un identificador a un nombre.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Perfil público encontrado"),
+            @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @io.swagger.v3.oas.annotations.media.Content),
+            @ApiResponse(responseCode = "404", description = "El perfil no existe o está oculto", content = @io.swagger.v3.oas.annotations.media.Content)
+    })
+    @GetMapping("/por-oid/{oid}")
+    public ResponseEntity<PerfilPublicoResponse> obtenerPerfilPublicoPorOid(
+            @Parameter(description = "Identificador de la persona en Azure AD")
+            @PathVariable String oid) {
+        return ResponseEntity.ok(servicio.buscarPerfilPublicoPorOid(oid));
     }
 
     /**
@@ -212,11 +214,7 @@ public class UsuarioController {
      */
     @Operation(
             summary = "Lista los perfiles públicos visibles",
-            description = """
-                    Devuelve los perfiles de la comunidad que están marcados como visibles, para
-                    alimentar la vitrina. Acepta filtros opcionales por carrera y por sede, que se
-                    comparan sin distinguir mayúsculas. El resultado viene paginado y nunca incluye
-                    teléfono ni redes sociales.""")
+            description = "Paginado, con filtros opcionales por carrera y sede. Nunca incluye teléfono ni redes.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Listado de perfiles visibles"),
             @ApiResponse(responseCode = "401", description = "Falta el token o no es válido", content = @io.swagger.v3.oas.annotations.media.Content)

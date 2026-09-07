@@ -9,7 +9,7 @@ import java.util.UUID;
  * Perfil de otra persona, tal como lo ve la comunidad.
  *
  * <p>No incluye teléfono ni redes a propósito: son datos de contacto privados. Compartirlos
- * requiere que ambas partes acepten una solicitud de colaboración, lo que se implementa en EP2.</p>
+ * requiere aceptar una solicitud de colaboración, que gestiona ms-contacto.</p>
  */
 @Schema(description = "Perfil público de un usuario, sin datos de contacto")
 public record PerfilPublicoResponse(
