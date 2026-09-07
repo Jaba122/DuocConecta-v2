@@ -271,13 +271,22 @@ cmd_desplegar() {
     exit 1
   }
 
+  # El front se sirve desde el mismo dominio del API Gateway. En un POST el navegador manda
+  # igual la cabecera Origin, aunque sea mismo origen, y si ese origen no está declarado el BFF
+  # responde 403 "Invalid CORS request" antes de mirar el token. Se agrega solo, derivado del
+  # API_ID, para que no dependa de que alguien lo escriba a mano en .env.
+  local origenes="${CORS_ORIGENES:-http://localhost:5173}"
+  if [[ -n "${API_ID:-}" && "$origenes" != *"$API_ID.execute-api.$REGION.amazonaws.com"* ]]; then
+    origenes="$origenes,https://$API_ID.execute-api.$REGION.amazonaws.com"
+  fi
+
   tmp=$(mktemp)  # archivo temporal: la task definition renderizada lleva ARNs y no va al repo
   sed -e "s|__ACCOUNT_ID__|$acc|g" -e "s|__REGISTRO__|$reg|g" -e "s|__TAG__|latest|g" \
       -e "s|__REGION__|$REGION|g" -e "s|__RDS_ENDPOINT__|$endpoint|g" \
       -e "s|__SECRETO_DB_ARN__|$secreto|g" \
       -e "s|__AZURE_TENANT_ID__|${AZURE_TENANT_ID:-}|g" \
       -e "s|__AZURE_CLIENT_ID__|${AZURE_CLIENT_ID:-}|g" \
-      -e "s|__CORS_ORIGENES__|${CORS_ORIGENES:-http://localhost:5173}|g" \
+      -e "s|__CORS_ORIGENES__|$origenes|g" \
       "$RAIZ/infra/task-definition.json" > "$tmp"
 
   # Se quita el bloque de comentarios (ECS rechaza campos que no conoce) y, si la imagen de
@@ -579,6 +588,17 @@ cmd_apigw() {
     fi
   done
   [[ $huerfanas -gt 0 ]] && ok "$huerfanas integraciones sin uso eliminadas"
+
+  # --- Registro de accesos ---------------------------------------------------
+  # Sin esto, un rechazo del API Gateway no deja rastro: no se sabe qué ruta coincidió, si
+  # falló el validador o si el error vino del backend. Diagnosticar un 403 se vuelve adivinar.
+  local grupo_log="/aws/apigateway/$PROYECTO"
+  aws logs create-log-group --log-group-name "$grupo_log" >/dev/null 2>&1 || true
+  local formato='{"id":"$context.requestId","hora":"$context.requestTime","metodo":"$context.httpMethod","ruta":"$context.path","rutaCoincidente":"$context.routeKey","estado":"$context.status","integracion":"$context.integration.status","errorIntegracion":"$context.integration.error","errorAutorizador":"$context.authorizer.error","mensaje":"$context.error.message"}'
+  local destino="arn:aws:logs:$REGION:$(cuenta):log-group:$grupo_log"
+  aws apigatewayv2 update-stage --api-id "$API_ID" --stage-name '$default' \
+    --access-log-settings "$(printf '{"DestinationArn":"%s","Format":%s}' "$destino" "$(printf '%s' "$formato" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")" \
+    >/dev/null 2>&1 && ok "registro de accesos en $grupo_log" || aviso "no se pudo activar el registro de accesos"
 
   # --- CORS -----------------------------------------------------------------
   # Orígenes concretos, sin comodines. El preflight lo responde el API Gateway sin pasar por
