@@ -8,6 +8,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 
@@ -55,10 +58,15 @@ public class ManejadorErrores {
         HttpStatus estadoRecibido = HttpStatus.valueOf(excepcion.getStatusCode().value());
 
         if (estadoRecibido.is4xxClientError()) {
+            String motivo = motivoDelMicroservicio(excepcion);
+
+            // Se registra aunque sea 4xx: sin esto un rechazo del microservicio no deja rastro
+            // en ningún lado y hay que adivinar por qué la aplicación dijo que no.
+            log.warn("Un microservicio rechazó la petición con {}: {}", estadoRecibido.value(), motivo);
+
             ProblemDetail problema = ProblemDetail.forStatus(estadoRecibido);
             problema.setTitle("La petición fue rechazada");
-            problema.setDetail("Un servicio interno rechazó la petición con el estado "
-                    + estadoRecibido.value() + ".");
+            problema.setDetail(motivo);
             return problema;
         }
 
@@ -66,8 +74,30 @@ public class ManejadorErrores {
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.BAD_GATEWAY);
         problema.setTitle("Error en un servicio interno");
         problema.setDetail("No se pudo completar la operación porque un servicio interno falló. "
-                + "Intentá de nuevo en unos momentos.");
+                + "Intenta de nuevo en unos momentos.");
         return problema;
+    }
+
+    /**
+     * Saca el motivo del cuerpo que devolvió el microservicio.
+     *
+     * <p>Los microservicios responden {@code {"mensaje": "..."}} y la seguridad compartida
+     * responde Problem Details con {@code detail}. Antes se descartaban los dos y se devolvía
+     * "un servicio interno rechazó la petición", que no le dice nada a quien está usando la
+     * aplicación ni a quien la depura.</p>
+     */
+    private String motivoDelMicroservicio(HttpStatusCodeException excepcion) {
+        String cuerpo = excepcion.getResponseBodyAsString(StandardCharsets.UTF_8);
+        if (cuerpo == null || cuerpo.isBlank()) {
+            return "El servicio rechazó la petición y no explicó por qué.";
+        }
+        for (String campo : new String[] {"mensaje", "detail"}) {
+            Matcher m = Pattern.compile("\"" + campo + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(cuerpo);
+            if (m.find() && !m.group(1).isBlank()) {
+                return m.group(1).replace("\\\"", "\"");
+            }
+        }
+        return "El servicio rechazó la petición y no explicó por qué.";
     }
 
     /**

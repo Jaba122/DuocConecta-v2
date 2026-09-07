@@ -2,6 +2,7 @@ package cl.duoc.duocconecta.usuarios.config;
 
 import cl.duoc.duocconecta.comun.seguridad.ConversorRolesJwt;
 import cl.duoc.duocconecta.comun.seguridad.ManejadorRespuestasAuth;
+import cl.duoc.duocconecta.comun.seguridad.RegistroDeRespuestas;
 import cl.duoc.duocconecta.comun.seguridad.SeguridadBaseConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,7 +23,7 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  */
 @Configuration
 @EnableMethodSecurity
-@Import({SeguridadBaseConfig.class, ManejadorRespuestasAuth.class})
+@Import({SeguridadBaseConfig.class, ManejadorRespuestasAuth.class, RegistroDeRespuestas.class})
 public class SeguridadConfig {
 
     /** Rutas abiertas: monitoreo y documentación. No exponen datos de nadie. */
