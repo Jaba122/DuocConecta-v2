@@ -1,0 +1,167 @@
+package cl.duoc.duocconecta.contacto;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.jayway.jsonpath.JsonPath;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationContext;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+
+/**
+ * Pruebas de ms-contacto: que el contexto arranque, que la seguridad esté puesta y que el
+ * consentimiento funcione de punta a punta (pedir, aceptar y recién ahí ver los datos).
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class MsContactoApplicationTests {
+
+    @Autowired
+    private ApplicationContext contexto;
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    /** El contexto levanta sin errores: atrapa beans faltantes y mapeos de entidad mal hechos. */
+    @Test
+    @DisplayName("El contexto de la aplicación levanta correctamente")
+    void elContextoLevanta() {
+        assertThat(contexto).isNotNull();
+    }
+
+    /** Sin credenciales no se entra: es la comprobación central de la evaluación. */
+    @Test
+    @DisplayName("GET /api/v1/colaboraciones/recibidas sin token responde 401")
+    void sinTokenDevuelve401() throws Exception {
+        mockMvc.perform(get("/api/v1/colaboraciones/recibidas"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /** El endpoint de salud queda abierto para que el monitoreo pueda consultarlo. */
+    @Test
+    @DisplayName("GET /actuator/health responde 200 sin token")
+    void healthEsPublico() throws Exception {
+        mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+    }
+
+    /** Un dominio que no es de Duoc queda fuera, aunque el token traiga rol. */
+    @Test
+    @DisplayName("Un dominio no autorizado recibe 403")
+    void dominioExternoRecibe403() throws Exception {
+        mockMvc.perform(get("/api/v1/colaboraciones/recibidas").with(tokenDe("alguien@gmail.com")))
+                .andExpect(status().isForbidden());
+    }
+
+    /** Pedirse contacto a uno mismo no tiene sentido y se rechaza. */
+    @Test
+    @DisplayName("Solicitar contacto a uno mismo responde 403")
+    void noSePuedeSolicitarASiMismo() throws Exception {
+        String yo = "oid-carla.soto@duocuc.cl";
+        mockMvc.perform(post("/api/v1/colaboraciones")
+                        .with(tokenDe("carla.soto@duocuc.cl"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"solicitadoId\": \"" + yo + "\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * El recorrido completo del consentimiento.
+     *
+     * <p>Una persona pide contacto, la solicitud queda PENDIENTE y sin datos compartidos; la otra
+     * acepta eligiendo qué mostrar, y solo entonces esos datos aparecen en la bandeja de quien
+     * hizo la solicitud. Es exactamente la garantía que la plataforma promete.</p>
+     */
+    @Test
+    @DisplayName("Los datos de contacto aparecen solo después de que la otra persona acepta")
+    void losDatosAparecenReciénAlAceptar() throws Exception {
+        RequestPostProcessor solicitante = tokenDe("pedro.vera@duocuc.cl");
+        RequestPostProcessor solicitado = tokenDe("ana.lagos@profesor.duoc.cl");
+
+        String creada = mockMvc.perform(post("/api/v1/colaboraciones")
+                        .with(solicitante)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "solicitadoId": "oid-ana.lagos@profesor.duoc.cl",
+                                  "mensaje": "Me interesa tu proyecto"
+                                }"""))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.estado").value("PENDIENTE"))
+                .andExpect(jsonPath("$.correoCompartido").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        String id = JsonPath.read(creada, "$.id");
+
+        // A quien recibe le llega la solicitud en su bandeja.
+        mockMvc.perform(get("/api/v1/colaboraciones/recibidas").with(solicitado))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')]").exists());
+
+        // Solo quien la recibió puede responderla.
+        mockMvc.perform(patch("/api/v1/colaboraciones/" + id + "/responder")
+                        .with(solicitante)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aceptar\": true}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(patch("/api/v1/colaboraciones/" + id + "/responder")
+                        .with(solicitado)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "aceptar": true,
+                                  "correo": "ana.lagos@profesor.duoc.cl",
+                                  "redes": "@analagos"
+                                }"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("ACEPTADA"));
+
+        // Y recién ahora quien pidió ve los datos, cada uno en su campo. El teléfono no viene
+        // porque ella no lo compartió, que es distinto de no tenerlo.
+        mockMvc.perform(get("/api/v1/colaboraciones/enviadas").with(solicitante))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].correoCompartido")
+                        .value("ana.lagos@profesor.duoc.cl"))
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].redesCompartidas")
+                        .value("@analagos"))
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].telefonoCompartido[0]")
+                        .doesNotExist());
+
+        // Una solicitud ya respondida no se responde de nuevo.
+        mockMvc.perform(patch("/api/v1/colaboraciones/" + id + "/responder")
+                        .with(solicitado)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aceptar\": false}"))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * Arma un token de prueba con los claims que emite Azure AD.
+     *
+     * <p>La authority se pone a mano porque el postprocesador {@code jwt()} no pasa por el
+     * conversor de roles. El servicio igual vuelve a validar el dominio del correo, así que un
+     * dominio externo sigue quedando rechazado aunque traiga la authority.</p>
+     */
+    private static RequestPostProcessor tokenDe(String correo) {
+        return jwt()
+                .jwt(token -> token
+                        .claim("oid", "oid-" + correo)
+                        .claim("email", correo)
+                        .claim("name", correo))
+                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                        "ROLE_ESTUDIANTE"));
+    }
+}
