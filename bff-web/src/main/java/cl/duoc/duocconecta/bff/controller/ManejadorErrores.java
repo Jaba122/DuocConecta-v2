@@ -1,116 +1,84 @@
 package cl.duoc.duocconecta.bff.controller;
 
-import cl.duoc.duocconecta.comun.seguridad.CorreoNoPresenteException;
-import cl.duoc.duocconecta.comun.seguridad.DominioNoPermitidoException;
+import cl.duoc.duocconecta.comun.seguridad.ManejadorErroresBase;
+import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import java.nio.charset.StandardCharsets;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
- * Traduce a respuestas HTTP los errores del BFF, incluidos los que vienen de los microservicios.
+ * Errores propios del BFF: los que llegan desde los microservicios.
+ * Los comunes vienen de {@link ManejadorErroresBase}.
  */
 @RestControllerAdvice
-public class ManejadorErrores {
+public class ManejadorErrores extends ManejadorErroresBase {
 
     private static final Logger log = LoggerFactory.getLogger(ManejadorErrores.class);
+    private static final String SIN_MOTIVO = "El servicio rechazó la petición y no explicó por qué.";
 
-    /** El correo del token no pertenece a un dominio institucional autorizado. */
-    @ExceptionHandler(DominioNoPermitidoException.class)
-    public ProblemDetail manejarDominioNoPermitido(DominioNoPermitidoException excepcion) {
-        log.warn("Se rechazó un acceso desde el dominio no autorizado '{}'.", excepcion.getDominio());
+    private final ObjectMapper json;
 
-        ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
-        problema.setTitle("Dominio no autorizado");
-        problema.setDetail("Tu correo no pertenece a un dominio institucional de Duoc UC. "
-                + "Entra con tu cuenta @duocuc.cl, @profesor.duoc.cl o @duoc.cl.");
-        return problema;
-    }
-
-    /** El token es válido pero no trae el correo del usuario. */
-    @ExceptionHandler(CorreoNoPresenteException.class)
-    public ProblemDetail manejarCorreoAusente(CorreoNoPresenteException excepcion) {
-        log.error("Token sin claim de correo: {}", excepcion.getMessage());
-
-        ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
-        problema.setTitle("No se pudo determinar tu correo institucional");
-        problema.setDetail("El token no incluye tu correo, así que no se puede asignar un rol. "
-                + "Avisa al equipo: falta configurar los claims opcionales del access token en Azure AD.");
-        return problema;
+    public ManejadorErrores(ObjectMapper json) {
+        this.json = json;
     }
 
     /**
      * Un microservicio respondió con un error.
      *
-     * <p>Los errores del propio usuario (4xx) se devuelven tal cual, porque son suyos y necesita
-     * verlos. Los del servidor (5xx) se convierten en 502: el problema es del backend, no de quien
-     * hizo la petición.</p>
+     * <p>Los 4xx se devuelven tal cual porque son del usuario y necesita verlos. Los 5xx pasan a
+     * 502: el problema es del backend, no de quien hizo la petición.</p>
      */
     @ExceptionHandler(HttpStatusCodeException.class)
     public ProblemDetail manejarErrorDeMicroservicio(HttpStatusCodeException excepcion) {
-        HttpStatus estadoRecibido = HttpStatus.valueOf(excepcion.getStatusCode().value());
+        HttpStatus estado = HttpStatus.valueOf(excepcion.getStatusCode().value());
 
-        if (estadoRecibido.is4xxClientError()) {
+        if (estado.is4xxClientError()) {
             String motivo = motivoDelMicroservicio(excepcion);
-
-            // Se registra aunque sea 4xx: sin esto un rechazo del microservicio no deja rastro
-            // en ningún lado y hay que adivinar por qué la aplicación dijo que no.
-            log.warn("Un microservicio rechazó la petición con {}: {}", estadoRecibido.value(), motivo);
-
-            ProblemDetail problema = ProblemDetail.forStatus(estadoRecibido);
-            problema.setTitle("La petición fue rechazada");
-            problema.setDetail(motivo);
-            return problema;
+            log.warn("Microservicio rechazó con {}: {}", estado.value(), motivo);
+            return problema(estado, "La petición fue rechazada", motivo);
         }
 
-        log.error("Un microservicio respondió {} al BFF.", estadoRecibido.value(), excepcion);
-        ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.BAD_GATEWAY);
-        problema.setTitle("Error en un servicio interno");
-        problema.setDetail("No se pudo completar la operación porque un servicio interno falló. "
-                + "Intenta de nuevo en unos momentos.");
-        return problema;
+        log.error("Microservicio respondió {}", estado.value(), excepcion);
+        return problema(HttpStatus.BAD_GATEWAY, "Error en un servicio interno",
+                "No se pudo completar la operación porque un servicio interno falló. "
+                        + "Intenta de nuevo en unos momentos.");
     }
 
     /**
-     * Saca el motivo del cuerpo que devolvió el microservicio.
+     * Saca el motivo del cuerpo del microservicio.
      *
-     * <p>Los microservicios responden {@code {"mensaje": "..."}} y la seguridad compartida
-     * responde Problem Details con {@code detail}. Antes se descartaban los dos y se devolvía
-     * "un servicio interno rechazó la petición", que no le dice nada a quien está usando la
-     * aplicación ni a quien la depura.</p>
+     * <p>Los cuatro servicios responden Problem Details, así que basta con leer {@code detail}.</p>
      */
     private String motivoDelMicroservicio(HttpStatusCodeException excepcion) {
         String cuerpo = excepcion.getResponseBodyAsString(StandardCharsets.UTF_8);
         if (cuerpo == null || cuerpo.isBlank()) {
-            return "El servicio rechazó la petición y no explicó por qué.";
+            return SIN_MOTIVO;
         }
-        for (String campo : new String[] {"mensaje", "detail"}) {
-            Matcher m = Pattern.compile("\"" + campo + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(cuerpo);
-            if (m.find() && !m.group(1).isBlank()) {
-                return m.group(1).replace("\\\"", "\"");
-            }
+        try {
+            JsonNode detalle = json.readTree(cuerpo).path("detail");
+            return detalle.isTextual() && !detalle.stringValue().isBlank()
+                    ? detalle.stringValue()
+                    : SIN_MOTIVO;
+        } catch (RuntimeException noEsJson) {
+            // Un 403 de la cadena de filtros llega como texto plano, no como JSON.
+            log.warn("Cuerpo de error no interpretable: {}", cuerpo);
+            return SIN_MOTIVO;
         }
-        return "El servicio rechazó la petición y no explicó por qué.";
     }
 
-    /**
-     * No se pudo contactar al microservicio: está caído, o se agotó el tiempo de espera.
-     */
+    /** No se pudo contactar al microservicio: está caído o se agotó la espera. */
     @ExceptionHandler(ResourceAccessException.class)
     public ProblemDetail manejarMicroservicioInalcanzable(ResourceAccessException excepcion) {
-        log.error("No se pudo contactar a un microservicio desde el BFF.", excepcion);
-
-        ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
-        problema.setTitle("Servicio no disponible");
-        problema.setDetail("Un servicio interno no está respondiendo. "
-                + "Verifica que los microservicios estén levantados e intenta de nuevo.");
-        return problema;
+        log.error("No se pudo contactar a un microservicio", excepcion);
+        return problema(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no disponible",
+                "Un servicio interno no está respondiendo. "
+                        + "Verifica que los microservicios estén levantados e intenta de nuevo.");
     }
 }
