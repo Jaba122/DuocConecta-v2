@@ -83,6 +83,9 @@ function Cabecera({ vista, irA, correo }) {
           </span>
         </nav>
 
+        {/* Los dos controles de cuenta van juntos: si la cabecera envuelve, se mueven como
+            una sola pieza al borde derecho en vez de separarse. */}
+        <div className="controles-cuenta">
         <div className="desplegable">
           <button className="boton-barra" onClick={() => abrir('solicitudes')}>
             Solicitudes
@@ -123,6 +126,7 @@ function Cabecera({ vista, irA, correo }) {
               <button className="opcion salir" onClick={cerrarSesion}>Cerrar sesión</button>
             </div>
           )}
+        </div>
         </div>
       </div>
     </header>

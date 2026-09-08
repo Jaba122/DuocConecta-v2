@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { colaboracionesRecibidas, colaboracionesEnviadas, responderColaboracion } from './api'
 import { ESTADOS_SOLICITUD, fechaLarga } from './catalogo'
+import DatosDeContacto from './DatosDeContacto'
 
 /** Las dos bandejas, compartidas entre solicitudes y colaboraciones para no pedirlas dos veces. */
 export function useColaboraciones() {
@@ -93,9 +94,13 @@ function Fila({ solicitud, esRecibida, alResponder }) {
 
 /**
  * Contactos desbloqueados, en las dos direcciones: da igual quién pidió, importa que hubo
- * aceptación. Un campo vacío se muestra como "no lo compartió", no como un espacio en blanco.
+ * aceptación. Los datos se abren en una ventana y no se muestran en la tarjeta: son datos que la
+ * otra persona compartió a propósito.
  */
 export function MisColaboraciones({ recibidas, enviadas }) {
+  // Cuál está abierta en la ventana. null = ninguna.
+  const [abierta, setAbierta] = useState(null)
+
   if (recibidas === null || enviadas === null) return <p className="ayuda">Cargando…</p>
 
   const aceptadas = [
@@ -108,29 +113,29 @@ export function MisColaboraciones({ recibidas, enviadas }) {
   }
 
   return (
-    <div className="lista">
-      {aceptadas.map(({ s, otra }) => (
-        <div key={s.id} className="contacto">
-          <p className="persona">{otra?.nombre ?? 'Alguien de la comunidad'}</p>
-          <p className="detalle">{[otra?.carrera, otra?.sede].filter(Boolean).join(' · ')}</p>
-          <dl>
-            <Dato etiqueta="Correo" valor={s.correoCompartido} />
-            <Dato etiqueta="Teléfono" valor={s.telefonoCompartido} />
-            <Dato etiqueta="Redes" valor={s.redesCompartidas} />
-          </dl>
-        </div>
-      ))}
-    </div>
-  )
-}
+    <>
+      <div className="lista">
+        {aceptadas.map(({ s, otra }) => (
+          <div key={s.id} className="contacto">
+            <p className="persona">{otra?.nombre ?? 'Alguien de la comunidad'}</p>
+            <p className="detalle">{[otra?.carrera, otra?.sede].filter(Boolean).join(' · ')}</p>
+            <div className="acciones">
+              <button className="secundario" onClick={() => setAbierta({ s, otra })}>
+                Ver datos de contacto
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
 
-/** Una fila de contacto. Si no vino el dato, se dice explícitamente que no se compartió. */
-function Dato({ etiqueta, valor }) {
-  return (
-    <div className="dato">
-      <dt>{etiqueta}</dt>
-      <dd className={valor ? '' : 'sin'}>{valor || 'no lo compartió'}</dd>
-    </div>
+      {abierta && (
+        <DatosDeContacto
+          colaboracion={abierta.s}
+          persona={abierta.otra}
+          alCerrar={() => setAbierta(null)}
+        />
+      )}
+    </>
   )
 }
 

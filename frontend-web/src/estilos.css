@@ -126,6 +126,9 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 
 /* Los dos menús que cuelgan de la cabecera. */
 .desplegable { position: relative; }
+/* Cuando la cabecera envuelve, los dos controles de cuenta se mueven juntos al borde derecho de
+   su fila en vez de separarse. En una sola fila no cambia nada: la navegación ya los empujaba. */
+.controles-cuenta { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .panel-flotante {
   position: absolute; right: 0; top: 46px; background: #fff; color: var(--tinta);
   border: 1px solid var(--borde); border-radius: 14px;
@@ -340,6 +343,7 @@ button { font: inherit; cursor: pointer; }
 .modal-cabecera h2 { margin: 0; flex: 1; font-weight: 600; font-size: 22px; }
 .modal-cabecera .cerrar { border-color: var(--borde); color: var(--tinta); }
 .modal form { padding: 22px 24px 26px; display: grid; gap: 16px; }
+.cuerpo-modal { padding: 22px 24px 26px; display: grid; gap: 16px; }
 
 /* --- Formularios --- */
 label { display: grid; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--tinta-apagada); }
@@ -451,8 +455,24 @@ pre { overflow-x: auto; background: var(--fondo-hueso); padding: 14px; border-ra
   .escribir button { width: 100%; }
 }
 
+/* Los menús cuelgan del botón porque en escritorio está pegado al borde derecho. Cuando la
+   cabecera envuelve eso deja de valer: el botón queda a media pantalla y el panel se salía por
+   la izquierda. Debajo de este ancho se anclan a la barra completa y ocupan el ancho útil. */
+@media (max-width: 820px) {
+  .barra { position: relative; }
+  .desplegable { position: static; }
+  .panel-flotante { top: calc(100% - 4px); left: 14px; right: 14px; }
+  .panel-flotante.ancho,
+  .panel-flotante.angosto { width: auto; }
+}
+
 /* Destinatario en la ventana de pedir contacto. */
 .destinatario { display: flex; align-items: center; gap: 11px; }
 .destinatario .iniciales { width: 40px; height: 40px; font-size: 13px; }
 .destinatario strong { display: block; font-size: 15px; }
 .destinatario span { display: block; font-size: 12.5px; color: var(--tinta-apagada); }
+
+/* La tarjeta de una colaboración: los datos van detrás del botón, no a la vista. */
+.contacto .acciones { margin-top: 0; }
+.cuerpo-modal .contacto { border: none; padding: 0; background: transparent; }
+.cuerpo-modal .consentimiento p:last-child { margin-bottom: 0; }
