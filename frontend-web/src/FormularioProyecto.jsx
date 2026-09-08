@@ -12,6 +12,7 @@ const VACIO = {
 export default function FormularioProyecto({ proyecto, alGuardar, alCerrar }) {
   const [datos, setDatos] = useState({ ...VACIO, ...(proyecto ?? {}) })
   const [errores, setErrores] = useState({})
+  const [textos, setTextos] = useState({})   // texto crudo de los campos de lista
   const [guardando, setGuardando] = useState(false)
 
   const editando = Boolean(proyecto?.id)
@@ -25,17 +26,33 @@ export default function FormularioProyecto({ proyecto, alGuardar, alCerrar }) {
     className: errores[clave] ? 'malo' : '',
   })
 
-  /** Las listas se escriben separadas por comas, que es más cómodo que una línea por ítem. */
+  /**
+   * Las listas se escriben separadas por comas, y el texto se conserva tal cual mientras se
+   * escribe. Partirlo en cada tecla borraba la coma recién escrita —el elemento vacío se
+   * descartaba y el campo se volvía a serializar—, así que no se podía empezar la segunda.
+   * La conversión a lista ocurre al salir del campo y al enviar.
+   */
+  const aLista = (texto) => texto.split(',').map((x) => x.trim()).filter(Boolean)
+
   const lista = (clave) => ({
-    value: (datos[clave] ?? []).join(', '),
-    onChange: (e) => setDatos({
-      ...datos,
-      [clave]: e.target.value.split(',').map((x) => x.trim()).filter(Boolean),
-    }),
+    value: textos[clave] ?? (datos[clave] ?? []).join(', '),
+    onChange: (e) => setTextos({ ...textos, [clave]: e.target.value }),
+    onBlur: () => {
+      if (textos[clave] === undefined) return
+      setDatos({ ...datos, [clave]: aLista(textos[clave]) })
+      setTextos({ ...textos, [clave]: undefined })
+    },
   })
 
   const enviar = async (evento) => {
     evento.preventDefault()
+
+    // Si se envía sin salir del campo, el texto en edición todavía no pasó a lista.
+    const pendientes = Object.fromEntries(
+      Object.entries(textos)
+        .filter(([, texto]) => texto !== undefined)
+        .map(([clave, texto]) => [clave, aLista(texto)]))
+    const datosFinales = { ...datos, ...pendientes }
 
     const fallos = {}
     if (!datos.nombre.trim()) fallos.nombre = 'Ponle un nombre al proyecto.'
@@ -45,7 +62,7 @@ export default function FormularioProyecto({ proyecto, alGuardar, alCerrar }) {
 
     setGuardando(true)
     try {
-      await alGuardar(datos)
+      await alGuardar(datosFinales)
     } finally {
       setGuardando(false)
     }
