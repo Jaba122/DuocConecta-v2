@@ -29,7 +29,7 @@ export function escuelaDe(carrera) {
 /** Sedes de la plataforma. Hoy el caso de estudio es una sola. */
 export const SEDES = ['Viña del Mar']
 
-/** Estados de un proyecto. Traducir acá evita repartir 'BUSCANDO_EQUIPO' por toda la interfaz. */
+/** Estados de un proyecto. Traducir aquí evita repartir 'BUSCANDO_EQUIPO' por toda la interfaz. */
 export const ESTADOS = {
   BUSCANDO_EQUIPO: 'Busca equipo',
   EN_DESARROLLO: 'En desarrollo',

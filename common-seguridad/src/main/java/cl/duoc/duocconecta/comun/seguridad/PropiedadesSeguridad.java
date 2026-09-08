@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * Configuración de seguridad, bajo {@code duocconecta.seguridad} en el YAML.
  *
- * <p>El mapa de dominios a roles vive acá y no en el código: sumar un dominio no recompila nada.</p>
+ * <p>El mapa de dominios a roles vive aquí y no en el código: sumar un dominio no recompila nada.</p>
  */
 @ConfigurationProperties(prefix = "duocconecta.seguridad")
 public class PropiedadesSeguridad {

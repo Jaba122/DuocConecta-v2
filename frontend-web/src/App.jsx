@@ -30,7 +30,7 @@ export default function App() {
 }
 
 /**
- * Cabecera fija. Las solicitudes pendientes están acá y no solo en el perfil porque son lo único
+ * Cabecera fija. Las solicitudes pendientes están aquí y no solo en el perfil porque son lo único
  * que le pide algo a la persona: si no se ven al entrar, quien pidió contacto queda esperando.
  */
 function Cabecera({ vista, irA, correo }) {

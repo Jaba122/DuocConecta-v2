@@ -14,6 +14,6 @@ public class CorreoNoPresenteException extends RuntimeException {
 
     public CorreoNoPresenteException(java.util.List<String> claimsBuscados) {
         super("El token no trae el correo del usuario. Se buscó en los claims " + claimsBuscados
-                + ". Revisá los claims opcionales del access token en el registro de la app en Azure AD.");
+                + ". Revisa los claims opcionales del access token en el registro de la app en Azure AD.");
     }
 }

@@ -1,6 +1,6 @@
 package cl.duoc.duocconecta.bff.service;
 
-import cl.duoc.duocconecta.bff.dto.AutorDto;
+import cl.duoc.duocconecta.bff.dto.Autor;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -14,10 +14,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class ResolvedorAutores {
 
-    private final UsuariosClient usuariosClient;
+    private final ClienteUsuarios clienteUsuarios;
 
-    public ResolvedorAutores(UsuariosClient usuariosClient) {
-        this.usuariosClient = usuariosClient;
+    public ResolvedorAutores(ClienteUsuarios clienteUsuarios) {
+        this.clienteUsuarios = clienteUsuarios;
     }
 
     /** Una consulta con memoria. Se usa y se descarta en cada petición. */
@@ -31,14 +31,14 @@ public class ResolvedorAutores {
      */
     public class Consulta {
 
-        private final Map<String, AutorDto> conocidos = new HashMap<>();
+        private final Map<String, Autor> conocidos = new HashMap<>();
 
         /** Nunca null, para que quien llama no tenga que comprobarlo. */
-        public AutorDto autorDe(String oid) {
+        public Autor autorDe(String oid) {
             if (oid == null) {
-                return AutorDto.DESCONOCIDO;
+                return Autor.DESCONOCIDO;
             }
-            return conocidos.computeIfAbsent(oid, usuariosClient::buscarAutorPorOid);
+            return conocidos.computeIfAbsent(oid, clienteUsuarios::buscarAutorPorOid);
         }
     }
 }

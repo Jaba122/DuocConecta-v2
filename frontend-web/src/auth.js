@@ -67,7 +67,7 @@ export async function obtenerToken() {
 
 /**
  * El contenido del token, decodificado. Un JWT son tres partes separadas por punto y la del medio
- * son los datos. Acá solo se leen para mostrar: la firma la verifica el backend, nunca el navegador.
+ * son los datos. Aquí solo se leen para mostrar: la firma la verifica el backend, nunca el navegador.
  */
 export async function claimsDelToken() {
   const token = await obtenerToken()
@@ -77,7 +77,7 @@ export async function claimsDelToken() {
 
 /**
  * Los App Roles del token. Viene vacío si el tenant no los usa; entonces el rol lo deduce el
- * backend del dominio del correo. Esa regla no se duplica acá: se desincronizaría.
+ * backend del dominio del correo. Esa regla no se duplica aquí: se desincronizaría.
  */
 export async function rolesDelToken() {
   const claims = await claimsDelToken()

@@ -1,5 +1,5 @@
 // Pantalla de perfil: datos propios, solicitudes y proyectos publicados.
-// Las solicitudes están acá y no en una vista aparte porque son información privada.
+// Las solicitudes están aquí y no en una vista aparte porque son información privada.
 import { useEffect, useMemo, useState } from 'react'
 import {
   obtenerMiPerfil, guardarMiPerfil, alternarVisibilidad,
