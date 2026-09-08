@@ -2,6 +2,7 @@ package cl.duoc.duocconecta.bff.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import cl.duoc.duocconecta.comun.seguridad.IdDeCorrelacion;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -14,11 +15,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * comodín, porque eso permitiría que cualquier sitio hiciera peticiones en nombre del usuario.</p>
  */
 @Configuration
-public class CorsConfig {
+public class ConfiguracionCors {
 
     private final PropiedadesBff propiedades;
 
-    public CorsConfig(PropiedadesBff propiedades) {
+    public ConfiguracionCors(PropiedadesBff propiedades) {
         this.propiedades = propiedades;
     }
 
@@ -32,6 +33,10 @@ public class CorsConfig {
         configuracion.setAllowedMethods(propiedades.getCors().getMetodos());
         configuracion.setAllowedHeaders(propiedades.getCors().getHeaders());
         configuracion.setMaxAge(propiedades.getCors().getMaxAgeSegundos());
+
+        // Sin esto el navegador no puede leer la cabecera en peticiones de otro origen, y el
+        // identificador de correlación quedaría invisible en desarrollo local.
+        configuracion.setExposedHeaders(java.util.List.of(IdDeCorrelacion.CABECERA));
 
         // El token viaja en la cabecera Authorization, no en cookies, así que no hace falta
         // habilitar credenciales.

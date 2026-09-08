@@ -1,9 +1,9 @@
 package cl.duoc.duocconecta.bff.service;
 
-import cl.duoc.duocconecta.bff.dto.AutorDto;
-import cl.duoc.duocconecta.bff.dto.PerfilPublicoDto;
-import cl.duoc.duocconecta.bff.dto.PerfilUsuarioDto;
-import cl.duoc.duocconecta.bff.dto.RedesDto;
+import cl.duoc.duocconecta.bff.dto.Autor;
+import cl.duoc.duocconecta.bff.dto.PerfilPublicoRespuesta;
+import cl.duoc.duocconecta.bff.dto.PerfilUsuario;
+import cl.duoc.duocconecta.bff.dto.Redes;
 import cl.duoc.duocconecta.comun.seguridad.UsuarioActual;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
@@ -18,7 +18,7 @@ import org.springframework.web.client.RestClient;
  * permisos con la identidad real, y el BFF nunca puede pedir más que el usuario.</p>
  */
 @Service
-public class UsuariosClient {
+public class ClienteUsuarios {
 
     private static final String RUTA_PERFIL_PROPIO = "/api/v1/usuarios/me";
     private static final String RUTA_REDES_PROPIAS = "/api/v1/usuarios/me/redes";
@@ -27,51 +27,46 @@ public class UsuariosClient {
     private final RestClient cliente;
     private final UsuarioActual usuarioActual;
 
-    public UsuariosClient(RestClient clienteMsUsuarios, UsuarioActual usuarioActual) {
+    public ClienteUsuarios(RestClient clienteMsUsuarios, UsuarioActual usuarioActual) {
         this.cliente = clienteMsUsuarios;
         this.usuarioActual = usuarioActual;
     }
 
     /** Si es el primer ingreso, el microservicio crea el perfil en el momento. */
-    public PerfilUsuarioDto obtenerPerfilPropio() {
+    public PerfilUsuario obtenerPerfilPropio() {
         return cliente.get()
                 .uri(RUTA_PERFIL_PROPIO)
-                .header(HttpHeaders.AUTHORIZATION, cabeceraAuthorization())
+                .header(HttpHeaders.AUTHORIZATION, usuarioActual.cabeceraAuthorization())
                 .retrieve()
-                .body(PerfilUsuarioDto.class);
+                .body(PerfilUsuario.class);
     }
 
     public List<String> obtenerRedesPropias() {
-        RedesDto respuesta = cliente.get()
+        Redes respuesta = cliente.get()
                 .uri(RUTA_REDES_PROPIAS)
-                .header(HttpHeaders.AUTHORIZATION, cabeceraAuthorization())
+                .header(HttpHeaders.AUTHORIZATION, usuarioActual.cabeceraAuthorization())
                 .retrieve()
-                .body(RedesDto.class);
+                .body(Redes.class);
 
         return (respuesta == null || respuesta.redes() == null) ? List.of() : respuesta.redes();
     }
 
     /**
-     * Devuelve {@link AutorDto#DESCONOCIDO} si el perfil no existe o está oculto: que alguien se
+     * Devuelve {@link Autor#DESCONOCIDO} si el perfil no existe o está oculto: que alguien se
      * haya ocultado no es motivo para que falle la pantalla entera.
      */
-    public AutorDto buscarAutorPorOid(String oid) {
+    public Autor buscarAutorPorOid(String oid) {
         try {
-            PerfilPublicoDto perfil = cliente.get()
+            PerfilPublicoRespuesta perfil = cliente.get()
                     .uri(RUTA_PERFIL_POR_OID, oid)
-                    .header(HttpHeaders.AUTHORIZATION, cabeceraAuthorization())
+                    .header(HttpHeaders.AUTHORIZATION, usuarioActual.cabeceraAuthorization())
                     .retrieve()
-                    .body(PerfilPublicoDto.class);
+                    .body(PerfilPublicoRespuesta.class);
             return perfil == null
-                    ? AutorDto.DESCONOCIDO
-                    : new AutorDto(perfil.nombre(), perfil.carrera(), perfil.sede());
+                    ? Autor.DESCONOCIDO
+                    : new Autor(perfil.nombre(), perfil.carrera(), perfil.sede());
         } catch (HttpClientErrorException.NotFound ignorada) {
-            return AutorDto.DESCONOCIDO;
+            return Autor.DESCONOCIDO;
         }
-    }
-
-    /** La cabecera Authorization con el token original de la petición en curso. */
-    private String cabeceraAuthorization() {
-        return "Bearer " + usuarioActual.tokenActual().getTokenValue();
     }
 }

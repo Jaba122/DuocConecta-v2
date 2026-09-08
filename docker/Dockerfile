@@ -25,7 +25,7 @@ COPY ms-usuarios/pom.xml      ms-usuarios/
 COPY ms-proyectos/pom.xml     ms-proyectos/
 COPY ms-contacto/pom.xml      ms-contacto/
 COPY bff-web/pom.xml          bff-web/
-RUN mvn -q -B dependency:go-offline -pl common-seguridad,ms-usuarios,bff-web || true
+RUN mvn -q -B dependency:go-offline -pl common-seguridad,ms-usuarios,ms-proyectos,ms-contacto,bff-web || true
 
 # Ahora el código y la compilación real del servicio pedido.
 COPY common-seguridad common-seguridad

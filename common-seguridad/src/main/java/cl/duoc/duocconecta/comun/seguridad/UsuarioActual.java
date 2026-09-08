@@ -13,11 +13,11 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  */
 public class UsuarioActual {
 
-    private final TokenClaims tokenClaims;
+    private final ClaimsDelToken claimsDelToken;
     private final ResolvedorRol resolvedorRol;
 
-    public UsuarioActual(TokenClaims tokenClaims, ResolvedorRol resolvedorRol) {
-        this.tokenClaims = tokenClaims;
+    public UsuarioActual(ClaimsDelToken claimsDelToken, ResolvedorRol resolvedorRol) {
+        this.claimsDelToken = claimsDelToken;
         this.resolvedorRol = resolvedorRol;
     }
 
@@ -28,18 +28,18 @@ public class UsuarioActual {
     public IdentidadUsuario obtener() {
         Jwt token = tokenActual();
 
-        String correo = tokenClaims.correoObligatorio(token);
+        String correo = claimsDelToken.correoObligatorio(token);
         String dominio = resolvedorRol.extraerDominio(correo)
                 .orElseThrow(() -> new DominioNoPermitidoException(correo));
 
         Rol rol = resolvedorRol.resolverPorDominio(dominio)
                 .orElseThrow(() -> new DominioNoPermitidoException(dominio));
 
-        String oid = tokenClaims.oid(token)
+        String oid = claimsDelToken.oid(token)
                 .orElseThrow(() -> new IllegalStateException(
                         "El token no trae el claim 'oid' ni 'sub'; no se puede identificar al usuario."));
 
-        return new IdentidadUsuario(oid, correo, tokenClaims.nombre(token), rol);
+        return new IdentidadUsuario(oid, correo, claimsDelToken.nombre(token), rol);
     }
 
     /** El token crudo de la petición en curso. */
@@ -50,6 +50,16 @@ public class UsuarioActual {
         }
         throw new IllegalStateException(
                 "No hay un token JWT en el contexto de seguridad para la petición en curso.");
+    }
+
+    /**
+     * El token en curso, listo para la cabecera Authorization.
+     *
+     * <p>El BFF reenvía el token del usuario a los microservicios: nunca usa credenciales propias,
+     * así cada servicio decide con la identidad real de quien pidió.</p>
+     */
+    public String cabeceraAuthorization() {
+        return "Bearer " + tokenActual().getTokenValue();
     }
 
     /** Datos del usuario, ya extraídos y validados desde el token. */

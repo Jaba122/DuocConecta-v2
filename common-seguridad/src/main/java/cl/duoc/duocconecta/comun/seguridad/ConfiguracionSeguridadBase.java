@@ -15,19 +15,19 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 /**
  * Configuración de seguridad compartida por todos los servicios de DuocConecta.
  *
- * <p>Cada servicio la incorpora con {@code @Import(SeguridadBaseConfig.class)}. Se importa
+ * <p>Cada servicio la incorpora con {@code @Import(ConfiguracionSeguridadBase.class)}. Se importa
  * de forma explícita y no por escaneo de componentes porque este módulo vive en otro paquete
  * que las aplicaciones.</p>
  *
- * <p>Acá se arma el decodificador del JWT con todas las validaciones encadenadas: firma,
+ * <p>Aquí se arma el decodificador del JWT con todas las validaciones encadenadas: firma,
  * vigencia, emisor y audiencia.</p>
  */
 @Configuration
 @EnableConfigurationProperties(PropiedadesSeguridad.class)
-public class SeguridadBaseConfig {
+public class ConfiguracionSeguridadBase {
 
     /**
-     * URL del emisor del tenant de Azure AD. De acá se descubre la ubicación de las claves
+     * URL del emisor del tenant de Azure AD. De aquí se descubre la ubicación de las claves
      * públicas con las que se verifica la firma de los tokens.
      */
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}")
@@ -45,20 +45,20 @@ public class SeguridadBaseConfig {
 
     /** Lee oid, correo, nombre y App Roles desde el token. */
     @Bean
-    public TokenClaims tokenClaims(PropiedadesSeguridad propiedades) {
-        return new TokenClaims(propiedades);
+    public ClaimsDelToken claimsDelToken(PropiedadesSeguridad propiedades) {
+        return new ClaimsDelToken(propiedades);
     }
 
     /** Convierte el token en una autenticación con el rol como authority. */
     @Bean
-    public ConversorRolesJwt conversorRolesJwt(TokenClaims tokenClaims, ResolvedorRol resolvedorRol) {
-        return new ConversorRolesJwt(tokenClaims, resolvedorRol);
+    public ConversorRolesJwt conversorRolesJwt(ClaimsDelToken claimsDelToken, ResolvedorRol resolvedorRol) {
+        return new ConversorRolesJwt(claimsDelToken, resolvedorRol);
     }
 
     /** Componente reutilizable para obtener el usuario autenticado desde cualquier capa. */
     @Bean
-    public UsuarioActual usuarioActual(TokenClaims tokenClaims, ResolvedorRol resolvedorRol) {
-        return new UsuarioActual(tokenClaims, resolvedorRol);
+    public UsuarioActual usuarioActual(ClaimsDelToken claimsDelToken, ResolvedorRol resolvedorRol) {
+        return new UsuarioActual(claimsDelToken, resolvedorRol);
     }
 
     /**

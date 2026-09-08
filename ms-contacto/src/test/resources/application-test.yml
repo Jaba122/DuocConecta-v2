@@ -1,9 +1,9 @@
-# Configuración exclusiva de los tests de ms-usuarios.
+# Configuración exclusiva de los tests de ms-contacto.
 # El objetivo es que el contexto levante sin depender de Docker ni de internet.
 
 spring:
   datasource:
-    # Base en memoria. El INIT crea el schema `usuarios` porque H2 no lo trae de fábrica
+    # Base en memoria. El INIT crea el schema `contacto` porque H2 no lo trae de fábrica
     # y las entidades lo esperan.
     url: jdbc:h2:mem:contacto_test;INIT=CREATE SCHEMA IF NOT EXISTS contacto;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -20,7 +20,7 @@ spring:
         default_schema: contacto
 
   flyway:
-    # Se apaga porque V1__usuarios.sql usa sintaxis de PostgreSQL.
+    # Se apaga porque V1__contacto.sql usa sintaxis de PostgreSQL.
     enabled: false
 
   security:
@@ -28,7 +28,7 @@ spring:
       resourceserver:
         jwt:
           # Se deja en blanco a propósito para tapar el valor de application.yml, que
-          # contiene el placeholder ${AZURE_TENANT_ID} y no se puede resolver acá.
+          # contiene el placeholder ${AZURE_TENANT_ID} y no se puede resolver aquí.
           issuer-uri: ""
           # Se usa jwk-set-uri y NO issuer-uri a propósito: issuer-uri hace descubrimiento
           # OIDC contra la red al arrancar el contexto, y el test fallaría sin internet.

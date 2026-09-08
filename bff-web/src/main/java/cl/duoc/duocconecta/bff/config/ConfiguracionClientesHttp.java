@@ -1,7 +1,9 @@
 package cl.duoc.duocconecta.bff.config;
 
+import cl.duoc.duocconecta.comun.seguridad.IdDeCorrelacion;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -12,9 +14,12 @@ import org.springframework.web.client.RestClient;
  *
  * <p>Con timeout explícito: sin él, un microservicio colgado deja al BFF esperando para siempre y
  * se lleva al frontend con él. Al agotarse, el manejador de errores devuelve 503.</p>
+ *
+ * <p>Todos reenvían el identificador de correlación, así una misma petición del navegador queda
+ * marcada igual en el registro del BFF y en el del microservicio.</p>
  */
 @Configuration
-public class RestClientConfig {
+public class ConfiguracionClientesHttp {
 
     /** Cliente hacia ms-usuarios: perfiles y redes. */
     @Bean
@@ -50,6 +55,14 @@ public class RestClientConfig {
         return RestClient.builder()
                 .baseUrl(urlBase)
                 .requestFactory(fabrica)
+                // El identificador viaja con la llamada: es lo que permite cruzar los registros
+                // de los cuatro servicios cuando algo falla.
+                .requestInitializer(peticion -> {
+                    String id = MDC.get(IdDeCorrelacion.CLAVE);
+                    if (id != null) {
+                        peticion.getHeaders().set(IdDeCorrelacion.CABECERA, id);
+                    }
+                })
                 .build();
     }
 }
