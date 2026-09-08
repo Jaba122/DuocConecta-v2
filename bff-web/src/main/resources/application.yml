@@ -1,5 +1,5 @@
 # Configuración del BFF.
-# Ningún valor sensible está escrito acá: todo viene por variable de entorno.
+# Ningún valor sensible está escrito aquí: todo viene por variable de entorno.
 
 server:
   port: 8080
@@ -68,7 +68,12 @@ springdoc:
 
 logging:
   level:
-    cl.duoc.duocconecta: INFO
+    # Se sube a DEBUG en la nube con la variable LOG_NIVEL, sin reconstruir la imagen.
+    cl.duoc.duocconecta: ${LOG_NIVEL:INFO}
+  pattern:
+    # El identificador de correlación va en cada línea: es lo que permite seguir una misma
+    # petición entre el BFF y los microservicios en un solo grupo de CloudWatch.
+    level: "%5p [%X{idPeticion:-sin-id}]"
 
 ---
 spring:

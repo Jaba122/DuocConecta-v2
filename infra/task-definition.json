@@ -31,6 +31,7 @@
       "portMappings": [{ "containerPort": 8081, "protocol": "tcp" }],
       "environment": [
         { "name": "AZURE_TENANT_ID", "value": "__AZURE_TENANT_ID__" },
+        { "name": "LOG_NIVEL", "value": "__LOG_NIVEL__" },
         { "name": "AZURE_CLIENT_ID", "value": "__AZURE_CLIENT_ID__" },
         { "name": "DB_URL", "value": "jdbc:postgresql://__RDS_ENDPOINT__:5432/duocconecta" },
         { "name": "DB_USER", "value": "duocconecta" }
@@ -63,6 +64,7 @@
       "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
       "environment": [
         { "name": "AZURE_TENANT_ID", "value": "__AZURE_TENANT_ID__" },
+        { "name": "LOG_NIVEL", "value": "__LOG_NIVEL__" },
         { "name": "AZURE_CLIENT_ID", "value": "__AZURE_CLIENT_ID__" },
         { "name": "MS_USUARIOS_URL", "value": "http://localhost:8081" },
         { "name": "MS_PROYECTOS_URL", "value": "http://localhost:8082" },
@@ -97,6 +99,7 @@
       "portMappings": [{ "containerPort": 8082, "protocol": "tcp" }],
       "environment": [
         { "name": "AZURE_TENANT_ID", "value": "__AZURE_TENANT_ID__" },
+        { "name": "LOG_NIVEL", "value": "__LOG_NIVEL__" },
         { "name": "AZURE_CLIENT_ID", "value": "__AZURE_CLIENT_ID__" },
         { "name": "DB_URL", "value": "jdbc:postgresql://__RDS_ENDPOINT__:5432/duocconecta" },
         { "name": "DB_USER", "value": "duocconecta" }
@@ -129,6 +132,7 @@
       "portMappings": [{ "containerPort": 8083, "protocol": "tcp" }],
       "environment": [
         { "name": "AZURE_TENANT_ID", "value": "__AZURE_TENANT_ID__" },
+        { "name": "LOG_NIVEL", "value": "__LOG_NIVEL__" },
         { "name": "AZURE_CLIENT_ID", "value": "__AZURE_CLIENT_ID__" },
         { "name": "DB_URL", "value": "jdbc:postgresql://__RDS_ENDPOINT__:5432/duocconecta" },
         { "name": "DB_USER", "value": "duocconecta" }

@@ -23,9 +23,9 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  * una versión de Jackson.</p>
  */
 @Configuration
-public class ManejadorRespuestasAuth {
+public class ManejadorRespuestasSeguridad {
 
-    private static final Logger log = LoggerFactory.getLogger(ManejadorRespuestasAuth.class);
+    private static final Logger log = LoggerFactory.getLogger(ManejadorRespuestasSeguridad.class);
 
     /** Sin token o con uno inválido: 401 con la cabecera {@code WWW-Authenticate} que pide el estándar. */
     @Bean

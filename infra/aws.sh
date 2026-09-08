@@ -287,6 +287,7 @@ cmd_desplegar() {
       -e "s|__AZURE_TENANT_ID__|${AZURE_TENANT_ID:-}|g" \
       -e "s|__AZURE_CLIENT_ID__|${AZURE_CLIENT_ID:-}|g" \
       -e "s|__CORS_ORIGENES__|$origenes|g" \
+      -e "s|__LOG_NIVEL__|${LOG_NIVEL:-INFO}|g" \
       "$RAIZ/infra/task-definition.json" > "$tmp"
 
   # Se quita el bloque de comentarios (ECS rechaza campos que no conoce) y, si la imagen de
