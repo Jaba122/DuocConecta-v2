@@ -102,7 +102,9 @@
         { "name": "LOG_NIVEL", "value": "__LOG_NIVEL__" },
         { "name": "AZURE_CLIENT_ID", "value": "__AZURE_CLIENT_ID__" },
         { "name": "DB_URL", "value": "jdbc:postgresql://__RDS_ENDPOINT__:5432/duocconecta" },
-        { "name": "DB_USER", "value": "duocconecta" }
+        { "name": "DB_USER", "value": "duocconecta" },
+        { "name": "S3_BUCKET_ADJUNTOS", "value": "__BUCKET_ADJUNTOS__" },
+        { "name": "AWS_REGION", "value": "__REGION__" }
       ],
       "secrets": [
         { "name": "DB_PASSWORD", "valueFrom": "__SECRETO_DB_ARN__:password::" }

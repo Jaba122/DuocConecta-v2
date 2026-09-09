@@ -288,6 +288,7 @@ cmd_desplegar() {
       -e "s|__AZURE_CLIENT_ID__|${AZURE_CLIENT_ID:-}|g" \
       -e "s|__CORS_ORIGENES__|$origenes|g" \
       -e "s|__LOG_NIVEL__|${LOG_NIVEL:-INFO}|g" \
+      -e "s|__BUCKET_ADJUNTOS__|${BUCKET_ADJUNTOS:-}|g" \
       "$RAIZ/infra/task-definition.json" > "$tmp"
 
   # Se quita el bloque de comentarios (ECS rechaza campos que no conoce) y, si la imagen de
@@ -346,6 +347,68 @@ cmd_desplegar() {
 # redirección, S3 es HTTP puro y CloudFront no está habilitado. El API Gateway da HTTPS y deja
 # el front y la API en el mismo origen, así el navegador ni siquiera aplica CORS.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# adjuntos — bucket para los archivos que la gente sube a sus proyectos.
+#
+# Bucket propio y no el del frontend: cmd_front hace `s3 sync --delete`, así que los adjuntos
+# desaparecerían en cada publicación del frontend.
+# ---------------------------------------------------------------------------
+cmd_adjuntos() {
+  source "$RAIZ/infra/.recursos" 2>/dev/null || { falla "Falta correr 'aws.sh crear' primero"; exit 1; }
+  local bucket="$PROYECTO-adjuntos-$(cuenta)"
+  local cuenta_id; cuenta_id=$(cuenta)
+
+  azul "1/3 · Bucket"
+  if ! aws s3api head-bucket --bucket "$bucket" >/dev/null 2>&1; then
+    aws s3api create-bucket --bucket "$bucket" >/dev/null
+  fi
+  aws s3api delete-public-access-block --bucket "$bucket" >/dev/null 2>&1 || true
+  ok "$bucket"
+
+  azul "2/3 · Política"
+  # Dos sentencias. La primera hace públicos los archivos, que es lo decidido: un proyecto
+  # público muestra sus adjuntos sin pedir sesión. La segunda le da permiso a LabRole, que es
+  # quien firma las subidas: se concede desde el recurso porque en el laboratorio no se pueden
+  # leer ni editar las políticas de identidad.
+  aws s3api put-bucket-policy --bucket "$bucket" --policy "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Sid\": \"LecturaPublicaDeAdjuntos\",
+        \"Effect\": \"Allow\", \"Principal\": \"*\",
+        \"Action\": \"s3:GetObject\",
+        \"Resource\": \"arn:aws:s3:::$bucket/adjuntos/*\"
+      },
+      {
+        \"Sid\": \"LabRoleAdministraAdjuntos\",
+        \"Effect\": \"Allow\",
+        \"Principal\": { \"AWS\": \"arn:aws:iam::$cuenta_id:role/LabRole\" },
+        \"Action\": [\"s3:PutObject\", \"s3:GetObject\", \"s3:DeleteObject\"],
+        \"Resource\": \"arn:aws:s3:::$bucket/adjuntos/*\"
+      }
+    ]
+  }" >/dev/null 2>&1 || { falla "El laboratorio no permite esta política de bucket"; exit 1; }
+  ok "lectura pública en adjuntos/ y escritura para LabRole"
+
+  azul "3/3 · CORS"
+  # El navegador sube directo a S3, así que el bucket tiene que aceptar PUT desde el origen de
+  # la aplicación. ETag se expone porque es lo que devuelve S3 al terminar la subida.
+  aws s3api put-bucket-cors --bucket "$bucket" --cors-configuration "{
+    \"CORSRules\": [{
+      \"AllowedOrigins\": [\"https://$API_ID.execute-api.$REGION.amazonaws.com\", \"http://localhost:5173\"],
+      \"AllowedMethods\": [\"PUT\", \"GET\", \"HEAD\"],
+      \"AllowedHeaders\": [\"*\"],
+      \"ExposeHeaders\": [\"ETag\"],
+      \"MaxAgeSeconds\": 3600
+    }]
+  }" >/dev/null
+  ok "PUT y GET desde la aplicación"
+
+  grep -q '^BUCKET_ADJUNTOS=' "$RAIZ/infra/.recursos" 2>/dev/null \
+    || echo "BUCKET_ADJUNTOS=$bucket" >> "$RAIZ/infra/.recursos"
+  azul "\nBucket de adjuntos listo: $bucket"
+}
+
 cmd_front() {
   source "$RAIZ/infra/.recursos" 2>/dev/null || { falla "Falta correr 'aws.sh crear' primero"; exit 1; }
   # Sin estos valores el front se compila igual pero el login falla, y el error recién
@@ -663,6 +726,7 @@ case "${1:-}" in
   build)     cmd_build "${2:-}" ;;
   desplegar) cmd_desplegar ;;
   front)     cmd_front ;;
+  adjuntos)  cmd_adjuntos ;;
   apigw)     cmd_apigw ;;
   iniciar)   cmd_iniciar ;;
   apagar)    cmd_apagar ;;

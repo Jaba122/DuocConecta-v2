@@ -44,6 +44,12 @@ spring:
           issuer-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0
 
 duocconecta:
+  # Adjuntos de los proyectos. El bucket llega por variable de entorno; en local queda vacío y
+  # el servicio falla al firmar, que es mejor que subir a un bucket equivocado.
+  s3:
+    bucket: ${S3_BUCKET_ADJUNTOS:}
+    region: ${AWS_REGION:us-east-1}
+
   seguridad:
     # Client-id del registro de la API en Azure AD. Es la audiencia que debe traer el token.
     audiencia: ${AZURE_CLIENT_ID}

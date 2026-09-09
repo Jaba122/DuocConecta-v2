@@ -16,6 +16,18 @@ public class ManejadorErrores extends ManejadorErroresBase {
         return problema(HttpStatus.NOT_FOUND, "No encontrado", excepcion.getMessage());
     }
 
+    /** La petición en sí no tiene sentido: un archivo que no se admite, una clave inválida. */
+    @ExceptionHandler(SolicitudInvalidaException.class)
+    public ProblemDetail manejarSolicitudInvalida(SolicitudInvalidaException excepcion) {
+        return problema(HttpStatus.BAD_REQUEST, "Solicitud inválida", excepcion.getMessage());
+    }
+
+    /** Choca con el estado actual, no con los permisos: 409 y no 403. */
+    @ExceptionHandler(ConflictoDeEstadoException.class)
+    public ProblemDetail manejarConflicto(ConflictoDeEstadoException excepcion) {
+        return problema(HttpStatus.CONFLICT, "No se puede en este momento", excepcion.getMessage());
+    }
+
     /** El proyecto es de otra persona, o es privado. */
     @ExceptionHandler(OperacionNoPermitidaException.class)
     public ProblemDetail manejarNoPermitido(OperacionNoPermitidaException excepcion) {

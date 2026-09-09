@@ -72,12 +72,10 @@ public class Proyecto {
     @Column(name = "herramienta")
     private List<String> herramientas = new ArrayList<>();
 
-    /** Documentos/capturas adicionales, aparte del link al repo (útil para patrones, guías, etc). */
+    /** Documentos o capturas, aparte del enlace al repositorio. Archivos subidos o enlaces. */
     @Builder.Default
-    @ElementCollection
-    @CollectionTable(name = "proyecto_archivos", joinColumns = @JoinColumn(name = "proyecto_id"))
-    @Column(name = "url_archivo")
-    private List<String> archivosAdjuntos = new ArrayList<>();
+    @OneToMany(mappedBy = "proyecto", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Adjunto> adjuntos = new ArrayList<>();
 
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
     private Instant fechaCreacion;
@@ -85,6 +83,12 @@ public class Proyecto {
     @PrePersist
     void alPersistir() {
         this.fechaCreacion = Instant.now();
+    }
+
+    /** Añade un adjunto y deja las dos puntas de la relación apuntándose. */
+    public void agregarAdjunto(Adjunto adjunto) {
+        adjunto.setProyecto(this);
+        this.adjuntos.add(adjunto);
     }
 
     public boolean esVisiblePara(String usuarioId) {

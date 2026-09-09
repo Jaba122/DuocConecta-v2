@@ -1,10 +1,14 @@
 package cl.duoc.duocconecta.proyectos.service;
 
+import cl.duoc.duocconecta.proyectos.domain.Adjunto;
 import cl.duoc.duocconecta.proyectos.domain.Proyecto;
 import cl.duoc.duocconecta.proyectos.domain.Visibilidad;
+import cl.duoc.duocconecta.proyectos.dto.AdjuntoDatos;
 import cl.duoc.duocconecta.proyectos.dto.ProyectoDatos;
+import cl.duoc.duocconecta.proyectos.exception.ConflictoDeEstadoException;
 import cl.duoc.duocconecta.proyectos.exception.OperacionNoPermitidaException;
 import cl.duoc.duocconecta.proyectos.exception.RecursoNoEncontradoException;
+import cl.duoc.duocconecta.proyectos.exception.SolicitudInvalidaException;
 import cl.duoc.duocconecta.proyectos.repository.RepositorioComentarios;
 import cl.duoc.duocconecta.proyectos.repository.RepositorioProyectos;
 import cl.duoc.duocconecta.proyectos.dto.ProyectoRespuesta;
@@ -13,6 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -28,11 +35,60 @@ public class ServicioProyectos {
 
     private final RepositorioProyectos repositorioProyectos;
     private final RepositorioComentarios repositorioComentarios;
+    private final ServicioAdjuntos servicioAdjuntos;
 
     /** A DTO, con la cuenta de comentarios. */
     private ProyectoRespuesta aRespuesta(Proyecto proyecto) {
         return ProyectoRespuesta.desdeEntidad(
-                proyecto, repositorioComentarios.countByProyectoId(proyecto.getId()));
+                proyecto, repositorioComentarios.countByProyectoId(proyecto.getId()),
+                servicioAdjuntos::urlPublica);
+    }
+
+    /**
+     * Deja los adjuntos del proyecto igual a lo que llegó, y borra de S3 lo que se quitó.
+     *
+     * <p>Se reemplaza el contenido y no la lista para que Hibernate siga el rastro de la colección.
+     * Los archivos que ya no están en la lista se borran del bucket: si no, cada edición dejaría
+     * basura acumulándose.</p>
+     */
+    private void sincronizarAdjuntos(Proyecto proyecto, List<AdjuntoDatos> entrantes) {
+        if (entrantes == null) {
+            return;
+        }
+        if (entrantes.size() > ServicioAdjuntos.MAXIMO_POR_PROYECTO) {
+            throw new ConflictoDeEstadoException(
+                    "Un proyecto admite hasta " + ServicioAdjuntos.MAXIMO_POR_PROYECTO + " adjuntos.");
+        }
+
+        Set<String> clavesQueSiguen = entrantes.stream()
+                .map(AdjuntoDatos::claveS3).filter(Objects::nonNull).collect(Collectors.toSet());
+        proyecto.getAdjuntos().stream()
+                .filter(Adjunto::esArchivoSubido)
+                .filter(a -> !clavesQueSiguen.contains(a.getClaveS3()))
+                .forEach(a -> servicioAdjuntos.borrar(a.getClaveS3()));
+
+        proyecto.getAdjuntos().clear();
+        entrantes.forEach(d -> proyecto.agregarAdjunto(aEntidad(d)));
+    }
+
+    /** Un adjunto es un archivo subido o un enlace, nunca las dos cosas ni ninguna. */
+    private Adjunto aEntidad(AdjuntoDatos d) {
+        boolean tieneClave = d.claveS3() != null && !d.claveS3().isBlank();
+        boolean tieneUrl = d.urlExterna() != null && !d.urlExterna().isBlank();
+        if (tieneClave == tieneUrl) {
+            throw new SolicitudInvalidaException(
+                    "Cada adjunto tiene que ser un archivo subido o un enlace, no ambos.");
+        }
+        if (tieneClave) {
+            servicioAdjuntos.validarClave(d.claveS3());
+        }
+        return Adjunto.builder()
+                .claveS3(tieneClave ? d.claveS3() : null)
+                .urlExterna(tieneUrl ? d.urlExterna() : null)
+                .nombre(d.nombre())
+                .tipoContenido(d.tipoContenido())
+                .tamanoBytes(d.tamanoBytes())
+                .build();
     }
 
     @Transactional
@@ -49,8 +105,8 @@ public class ServicioProyectos {
                 .colaboradoresIds(dto.visibilidad() == Visibilidad.COMPARTIDO && dto.colaboradoresIds() != null
                         ? dto.colaboradoresIds() : List.of())
                 .herramientas(dto.herramientas() != null ? dto.herramientas() : List.of())
-                .archivosAdjuntos(dto.archivosAdjuntos() != null ? dto.archivosAdjuntos() : List.of())
                 .build();
+        sincronizarAdjuntos(repo, dto.adjuntos());
         return aRespuesta(repositorioProyectos.save(repo));
     }
 
@@ -106,10 +162,7 @@ public class ServicioProyectos {
             proyecto.getHerramientas().clear();
             proyecto.getHerramientas().addAll(dto.herramientas());
         }
-        if (dto.archivosAdjuntos() != null) {
-            proyecto.getArchivosAdjuntos().clear();
-            proyecto.getArchivosAdjuntos().addAll(dto.archivosAdjuntos());
-        }
+        sincronizarAdjuntos(proyecto, dto.adjuntos());
         return aRespuesta(repositorioProyectos.save(proyecto));
     }
 
@@ -138,6 +191,9 @@ public class ServicioProyectos {
         if (!repo.getPropietarioId().equals(usuarioId)) {
             throw new OperacionNoPermitidaException("Solo el propietario puede eliminar este proyecto");
         }
+        // Los archivos no se van solos con la fila: hay que sacarlos del bucket.
+        repo.getAdjuntos().stream().filter(Adjunto::esArchivoSubido)
+                .forEach(a -> servicioAdjuntos.borrar(a.getClaveS3()));
         repositorioProyectos.delete(repo);
     }
 }

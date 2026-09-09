@@ -27,7 +27,7 @@ public record ProyectoRespuesta(
         String estado,
         String visibilidad,
         List<String> colaboradoresIds,
-        List<String> archivosAdjuntos,
+        List<AdjuntoRespuesta> adjuntos,
         long cantidadComentarios,
         Instant fechaCreacion) {
 
@@ -35,6 +35,6 @@ public record ProyectoRespuesta(
     public ProyectoRespuesta conAutor(Autor quienPublico) {
         return new ProyectoRespuesta(id, nombre, resumen, descripcion, urlRepositorio, propietarioId,
                 quienPublico, sede, herramientas, estado, visibilidad, colaboradoresIds,
-                archivosAdjuntos, cantidadComentarios, fechaCreacion);
+                adjuntos, cantidadComentarios, fechaCreacion);
     }
 }

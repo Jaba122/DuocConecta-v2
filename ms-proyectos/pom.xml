@@ -57,6 +57,13 @@
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
 
+        <!-- S3: el backend firma la subida y el navegador sube directo, así el archivo nunca
+             pasa por el contenedor, que tiene 1 GB. El presigner viene dentro de este artefacto. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+
         <!-- Lombok: viene del código original de este servicio y se conserva. -->
         <dependency>
             <groupId>org.projectlombok</groupId>

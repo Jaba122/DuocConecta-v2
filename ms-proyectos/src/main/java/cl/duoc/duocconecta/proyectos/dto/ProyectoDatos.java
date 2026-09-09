@@ -38,6 +38,6 @@ public record ProyectoDatos(
 
         List<String> colaboradoresIds,
 
-        List<String> archivosAdjuntos
+        List<AdjuntoDatos> adjuntos
 ) {
 }
