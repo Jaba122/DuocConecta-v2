@@ -67,6 +67,54 @@ export const publicarProyecto = (proyecto) =>
 export const editarProyecto = (id, proyecto) =>
   pedir(`/api/v1/proyectos/${id}`, { method: 'PUT', body: JSON.stringify(proyecto) })
 
+/** Pide autorización para subir un archivo. Devuelve la clave y la URL firmada. */
+export const firmarAdjunto = (archivo) =>
+  pedir('/api/v1/proyectos/adjuntos/firma', {
+    method: 'POST',
+    body: JSON.stringify({
+      nombre: archivo.name,
+      // Algunos navegadores dejan el tipo vacío; S3 exige que el PUT use exactamente el que se firma.
+      tipoContenido: archivo.type || 'application/octet-stream',
+      tamanoBytes: archivo.size,
+    }),
+  })
+
+/**
+ * Sube el archivo directo a S3 con la URL firmada. No pasa por el backend.
+ *
+ * <p>Usa XMLHttpRequest y no fetch porque es la única forma de informar el progreso. El
+ * Content-Type tiene que ser el mismo que se firmó, o S3 rechaza la firma.</p>
+ */
+export function subirArchivoAS3(archivo, firma, alAvanzar) {
+  return new Promise((resolver, rechazar) => {
+    const peticion = new XMLHttpRequest()
+    peticion.open('PUT', firma.urlFirmada)
+    peticion.setRequestHeader('Content-Type', archivo.type || 'application/octet-stream')
+
+    peticion.upload.onprogress = (e) => {
+      if (e.lengthComputable && alAvanzar) alAvanzar(Math.round((e.loaded / e.total) * 100))
+    }
+    peticion.onload = () => (peticion.status >= 200 && peticion.status < 300
+      ? resolver()
+      : rechazar(new Error(`S3 rechazó la subida (${peticion.status}).`)))
+    peticion.onerror = () => rechazar(new Error('No se pudo conectar con el almacenamiento.'))
+
+    peticion.send(archivo)
+  })
+}
+
+/** Firma, sube y devuelve el adjunto listo para mandar con el proyecto. */
+export async function subirAdjunto(archivo, alAvanzar) {
+  const firma = await firmarAdjunto(archivo)
+  await subirArchivoAS3(archivo, firma, alAvanzar)
+  return {
+    claveS3: firma.clave,
+    nombre: archivo.name,
+    tipoContenido: archivo.type || 'application/octet-stream',
+    tamanoBytes: archivo.size,
+  }
+}
+
 /** Borra un proyecto propio de forma definitiva. */
 export const eliminarProyecto = (id) =>
   pedir(`/api/v1/proyectos/${id}`, { method: 'DELETE' })

@@ -1,12 +1,13 @@
 // Ventana para publicar o editar un proyecto: el mismo formulario en los dos casos.
 // Valida antes de enviar, para no depender de un 400 del servidor.
 import { useState } from 'react'
+import AdjuntosProyecto from './AdjuntosProyecto'
 import { ESTADOS, HERRAMIENTAS_SUGERIDAS, SEDES } from './catalogo'
 
 /** Un proyecto nuevo empieza público y buscando equipo, que es el caso más común. */
 const VACIO = {
   nombre: '', resumen: '', descripcion: '', urlRepositorio: '', sede: SEDES[0],
-  herramientas: [], estado: 'BUSCANDO_EQUIPO', visibilidad: 'PUBLICO', archivosAdjuntos: [],
+  herramientas: [], estado: 'BUSCANDO_EQUIPO', visibilidad: 'PUBLICO', adjuntos: [],
 }
 
 export default function FormularioProyecto({ proyecto, alGuardar, alCerrar }) {
@@ -146,10 +147,10 @@ export default function FormularioProyecto({ proyecto, alGuardar, alCerrar }) {
               <input type="url" placeholder="https://…" {...campo('urlRepositorio')} />
             </label>
 
-            <label>
-              Archivos adjuntos (separados por comas)
-              <input placeholder="informe.pdf, prototipo.fig" {...lista('archivosAdjuntos')} />
-            </label>
+            <AdjuntosProyecto
+              adjuntos={datos.adjuntos ?? []}
+              alCambiar={(adjuntos) => setDatos({ ...datos, adjuntos })}
+            />
 
             <div className="acciones">
               <button className="principal" type="submit" disabled={guardando}>

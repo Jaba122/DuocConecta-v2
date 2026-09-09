@@ -2,7 +2,9 @@
 // cabecera y sus vistas (Vitrina, Perfil y Diagnóstico) si la persona ya entró.
 import { useCallback, useEffect, useState } from 'react'
 import { cuentaActual, iniciarSesion, cerrarSesion, claimsDelToken, alCambiarSesion } from './auth'
+import AceptarSolicitud from './AceptarSolicitud'
 import { colaboracionesRecibidas, responderColaboracion } from './api'
+import insigniaDuoc from './assets/duoc-uc.jpg'
 import { iniciales, fechaLarga } from './catalogo'
 import Perfil from './Perfil'
 import Vitrina from './Vitrina'
@@ -36,6 +38,7 @@ export default function App() {
 function Cabecera({ vista, irA, correo }) {
   const [pendientes, setPendientes] = useState([])
   const [abierto, setAbierto] = useState(null)   // 'solicitudes' | 'cuenta' | null
+  const [aceptando, setAceptando] = useState(null)
   const [nombre, setNombre] = useState('')
 
   const recargarPendientes = useCallback(() => {
@@ -51,11 +54,10 @@ function Cabecera({ vista, irA, correo }) {
     claimsDelToken().then((c) => setNombre(c.name ?? correo)).catch(() => setNombre(correo))
   }, [correo])
 
-  const responder = async (solicitud, aceptar) => {
-    const compartirTelefono = aceptar && confirm(
-      'Al aceptar se comparte tu correo institucional y tus redes.\n\n'
-      + '¿Quieres compartir también tu teléfono?')
+  // Aceptar abre la ventana de consentimiento; rechazar no comparte nada y va directo.
+  const responder = async (solicitud, aceptar, compartirTelefono = false) => {
     await responderColaboracion(solicitud.id, aceptar, compartirTelefono)
+    setAceptando(null)
     recargarPendientes()
   }
 
@@ -102,7 +104,7 @@ function Cabecera({ vista, irA, correo }) {
                     <p className="persona">{s.solicitante?.nombre ?? 'Alguien de la comunidad'}</p>
                     <p className="detalle">quiere compartir contacto · {fechaLarga(s.fechaSolicitud)}</p>
                     <div className="acciones">
-                      <button className="principal crece" onClick={() => responder(s, true)}>Aceptar</button>
+                      <button className="principal crece" onClick={() => setAceptando(s)}>Aceptar</button>
                       <button className="secundario crece" onClick={() => responder(s, false)}>Rechazar</button>
                     </div>
                   </div>
@@ -129,6 +131,14 @@ function Cabecera({ vista, irA, correo }) {
         </div>
         </div>
       </div>
+
+      {aceptando && (
+        <AceptarSolicitud
+          solicitud={aceptando}
+          alConfirmar={(compartirTelefono) => responder(aceptando, true, compartirTelefono)}
+          alCerrar={() => setAceptando(null)}
+        />
+      )}
     </header>
   )
 }
@@ -139,16 +149,17 @@ function Login() {
     <div className="login">
       <div className="login-panel">
         <span className="logo" />
-        <h1>Los proyectos se muestran.<br />Los contactos se piden.</h1>
+        <h1>Comparte tus proyectos con la comunidad de Duoc UC y colabora con otros</h1>
         <p>
           Publica lo que estás haciendo, encuentra gente de otras carreras y sedes, y comparte
           tus datos solo con quien tú aceptes.
         </p>
       </div>
       <div className="login-form">
+        <img className="insignia-duoc" src={insigniaDuoc} alt="Duoc UC" />
         <h2>Entra con tu cuenta Duoc</h2>
         <p className="ayuda">
-          El acceso se valida con el login institucional. Solo se permiten correos de
+          El acceso se valida con el correo institucional. Solo se permiten correos de
           dominios de Duoc UC.
         </p>
         <button className="principal" onClick={iniciarSesion} style={{ marginTop: 20 }}>
