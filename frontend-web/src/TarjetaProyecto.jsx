@@ -1,8 +1,8 @@
 // Una tarjeta de la vitrina: lo justo para decidir si vale la pena abrirla.
 // El detalle completo va en el panel lateral.
-import { ESTADOS, iniciales, fechaCorta } from './catalogo'
+import { ESTADOS, iniciales, fechaCorta, TEXTO_SOLICITUD } from './catalogo'
 
-export default function TarjetaProyecto({ proyecto, esMio, alAbrir, alPedirContacto, yaSolicitado }) {
+export default function TarjetaProyecto({ proyecto, esMio, alAbrir, alPedirContacto, estadoSolicitud }) {
   const oculto = proyecto.visibilidad !== 'PUBLICO'
   const autor = proyecto.autor ?? {}
 
@@ -51,10 +51,10 @@ export default function TarjetaProyecto({ proyecto, esMio, alAbrir, alPedirConta
         ) : (
           <button
             className="principal crece"
-            disabled={yaSolicitado}
+            disabled={Boolean(estadoSolicitud)}
             onClick={soloEsto(alPedirContacto)}
           >
-            {yaSolicitado ? 'Solicitud enviada' : 'Pedir contacto'}
+            {TEXTO_SOLICITUD[estadoSolicitud] ?? 'Pedir contacto'}
           </button>
         )}
       </div>

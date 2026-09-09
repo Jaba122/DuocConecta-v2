@@ -5,8 +5,10 @@ import cl.duoc.duocconecta.bff.dto.PerfilUsuario;
 import cl.duoc.duocconecta.bff.dto.DecisionColaboracion;
 import cl.duoc.duocconecta.bff.dto.SolicitudColaboracionDatos;
 import cl.duoc.duocconecta.bff.service.ClienteContacto;
+import cl.duoc.duocconecta.comun.seguridad.UsuarioActual;
 import cl.duoc.duocconecta.bff.dto.DatosDeContacto;
 import cl.duoc.duocconecta.bff.service.ResolvedorAutores;
+import cl.duoc.duocconecta.bff.service.ResolvedorProyectos;
 import cl.duoc.duocconecta.bff.service.ClienteUsuarios;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -53,12 +55,18 @@ public class ControladorColaboracionesBff {
     private final ClienteContacto clienteContacto;
     private final ClienteUsuarios clienteUsuarios;
     private final ResolvedorAutores resolvedorAutores;
+    private final ResolvedorProyectos resolvedorProyectos;
+    private final UsuarioActual usuarioActual;
 
     public ControladorColaboracionesBff(ClienteContacto clienteContacto, ClienteUsuarios clienteUsuarios,
-                                       ResolvedorAutores resolvedorAutores) {
+                                       ResolvedorAutores resolvedorAutores,
+                                       ResolvedorProyectos resolvedorProyectos,
+                                       UsuarioActual usuarioActual) {
         this.clienteContacto = clienteContacto;
         this.clienteUsuarios = clienteUsuarios;
         this.resolvedorAutores = resolvedorAutores;
+        this.resolvedorProyectos = resolvedorProyectos;
+        this.usuarioActual = usuarioActual;
     }
 
     /** Envía una solicitud de colaboración a otra persona. */
@@ -75,7 +83,11 @@ public class ControladorColaboracionesBff {
     @PreAuthorize(ROLES_DE_LA_PLATAFORMA)
     public ResponseEntity<ColaboracionRespuesta> solicitar(
             @Valid @RequestBody SolicitudColaboracionDatos solicitud) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(clienteContacto.crear(solicitud));
+        // Pedir contacto es ofrecer el propio: se adjuntan los datos de quien pide. No se muestran
+        // a nadie mientras la solicitud siga pendiente.
+        DatosDeContacto mios = datosDeContactoPropios(solicitud.compartirTelefono());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(uno(clienteContacto.crear(solicitud, mios)));
     }
 
     /**
@@ -103,7 +115,7 @@ public class ControladorColaboracionesBff {
                 ? datosDeContactoPropios(respuesta.compartirTelefono())
                 : DatosDeContacto.NINGUNO;
 
-        return ResponseEntity.ok(clienteContacto.responder(id, respuesta.aceptar(), contacto));
+        return ResponseEntity.ok(uno(clienteContacto.responder(id, respuesta.aceptar(), contacto)));
     }
 
     /** Solicitudes que otras personas me enviaron. */
@@ -135,11 +147,19 @@ public class ControladorColaboracionesBff {
      * "00000000-0000… quiere compartir contacto contigo".</p>
      */
     private List<ColaboracionRespuesta> conPersonas(List<ColaboracionRespuesta> solicitudes) {
-        ResolvedorAutores.Consulta consulta = resolvedorAutores.abrir();
+        ResolvedorAutores.Consulta personas = resolvedorAutores.abrir();
+        ResolvedorProyectos.Consulta proyectos = resolvedorProyectos.abrir();
+        String yo = usuarioActual.obtener().oid();
         return solicitudes.stream()
-                .map(s -> s.conPersonas(consulta.autorDe(s.solicitanteId()),
-                        consulta.autorDe(s.solicitadoId())))
+                .map(s -> s.resuelta(personas.autorDe(s.solicitanteId()),
+                        personas.autorDe(s.solicitadoId()),
+                        proyectos.nombreDe(s.proyectoId()), yo))
                 .toList();
+    }
+
+    /** Lo mismo para una sola solicitud, la recién creada o la recién respondida. */
+    private ColaboracionRespuesta uno(ColaboracionRespuesta solicitud) {
+        return conPersonas(List.of(solicitud)).get(0);
     }
 
     /**

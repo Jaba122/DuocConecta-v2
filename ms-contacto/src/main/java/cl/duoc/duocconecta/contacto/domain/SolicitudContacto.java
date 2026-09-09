@@ -43,23 +43,34 @@ public class SolicitudContacto {
     private EstadoSolicitud estado;
 
     /**
-     * Datos de contacto que la persona solicitada eligió compartir al aceptar.
+     * Lo que ofrece quien pide, al momento de pedir. Pedir contacto es ofrecer el propio.
      *
-     * <p>Van en tres campos y no en un texto único para que la interfaz pueda mostrarlos por
-     * separado, y sobre todo para que se vea qué se compartió y qué no: un teléfono vacío
-     * significa que decidió no darlo, no que se perdió en el camino.</p>
-     *
-     * <p>Se completan solo cuando el estado es ACEPTADA. Antes de la aceptación explícita no se
-     * guarda ninguno.</p>
+     * <p>Se guarda desde el principio pero <b>no se muestra a nadie</b> hasta que hay aceptación:
+     * el consentimiento sigue siendo la condición, solo que ahora corre en los dos sentidos.</p>
      */
-    @Column(name = "correo_compartido", length = 255)
-    private String correoCompartido;
+    @Column(name = "correo_solicitante", length = 255)
+    private String correoSolicitante;
 
-    @Column(name = "telefono_compartido", length = 50)
-    private String telefonoCompartido;
+    @Column(name = "telefono_solicitante", length = 50)
+    private String telefonoSolicitante;
 
-    @Column(name = "redes_compartidas", length = 500)
-    private String redesCompartidas;
+    @Column(name = "redes_solicitante", length = 500)
+    private String redesSolicitante;
+
+    /**
+     * Lo que comparte quien acepta. Se completa solo al aceptar.
+     *
+     * <p>Van en tres campos y no en un texto único para que se vea qué se compartió y qué no: un
+     * teléfono vacío significa que decidió no darlo, no que se perdió en el camino.</p>
+     */
+    @Column(name = "correo_solicitado", length = 255)
+    private String correoSolicitado;
+
+    @Column(name = "telefono_solicitado", length = 50)
+    private String telefonoSolicitado;
+
+    @Column(name = "redes_solicitado", length = 500)
+    private String redesSolicitado;
 
     @Column(name = "fecha_solicitud", nullable = false, updatable = false)
     private Instant fechaSolicitud;

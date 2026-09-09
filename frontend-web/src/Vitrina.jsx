@@ -27,8 +27,9 @@ export default function Vitrina() {
   const [editando, setEditando] = useState(null)   // null cerrado · {} nuevo · proyecto si edita
   const [pidiendoA, setPidiendoA] = useState(null)  // el proyecto cuyo autor se quiere contactar
 
-  // A quién le pedí contacto ya, para no ofrecer dos veces lo mismo.
-  const [yaPedidos, setYaPedidos] = useState(new Set())
+  // Estado de mi solicitud por cada proyecto: PENDIENTE o ACEPTADA. Va por proyecto y no por
+  // persona, porque alguien puede tener varios proyectos y se pide contacto por cada uno.
+  const [estadoPorProyecto, setEstadoPorProyecto] = useState(new Map())
 
   // El oid dice qué proyectos son propios. Sale del token, no del perfil, que es editable.
   useEffect(() => {
@@ -44,10 +45,11 @@ export default function Vitrina() {
     // Si esta llamada falla no se puede saber a quién ya se le pidió, así que se avisa en vez
     // de dejar el botón habilitado y que el servidor rechace la solicitud repetida.
     colaboracionesEnviadas()
-      .then((enviadas) => setYaPedidos(new Set(
-        enviadas.filter((s) => s.estado !== 'RECHAZADA').map((s) => s.solicitadoId))))
+      .then((enviadas) => setEstadoPorProyecto(new Map(
+        enviadas.filter((s) => s.estado !== 'RECHAZADA' && s.proyectoId)
+          .map((s) => [s.proyectoId, s.estado]))))
       .catch((e) => {
-        setYaPedidos(new Set())
+        setEstadoPorProyecto(new Map())
         setError(`No se pudieron leer tus solicitudes enviadas: ${e.message}`)
       })
   }
@@ -80,15 +82,16 @@ export default function Vitrina() {
     }
   }
 
-  /** Envía la solicitud con el mensaje que se escribió en la ventana. */
-  const enviarSolicitud = async (mensaje) => {
+  /** Envía la solicitud con el mensaje y la decisión sobre el teléfono. */
+  const enviarSolicitud = async (mensaje, compartirTelefono) => {
     try {
       await solicitarColaboracion({
         solicitadoId: pidiendoA.propietarioId,
         proyectoId: pidiendoA.id,
         mensaje,
+        compartirTelefono,
       })
-      setYaPedidos(new Set([...yaPedidos, pidiendoA.propietarioId]))
+      setEstadoPorProyecto(new Map(estadoPorProyecto).set(pidiendoA.id, 'PENDIENTE'))
       setPidiendoA(null)
       avisar('Solicitud enviada. Si acepta, sus datos aparecerán en tu perfil.')
     } catch (e) {
@@ -144,7 +147,7 @@ export default function Vitrina() {
               key={p.id}
               proyecto={p}
               esMio={p.propietarioId === miOid}
-              yaSolicitado={yaPedidos.has(p.propietarioId)}
+              estadoSolicitud={estadoPorProyecto.get(p.id)}
               alAbrir={() => setAbiertoId(p.id)}
               alPedirContacto={() => setPidiendoA(p)}
             />
@@ -156,7 +159,7 @@ export default function Vitrina() {
         <DetalleProyecto
           proyecto={abierto}
           esMio={abierto.propietarioId === miOid}
-          yaSolicitado={yaPedidos.has(abierto.propietarioId)}
+          estadoSolicitud={estadoPorProyecto.get(abierto.id)}
           alPedirContacto={() => { setPidiendoA(abierto); setAbiertoId(null) }}
           alEditar={() => { setEditando(abierto); setAbiertoId(null) }}
           alBorrar={() => borrar(abierto)}

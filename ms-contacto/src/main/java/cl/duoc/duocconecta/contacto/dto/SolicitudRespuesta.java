@@ -8,9 +8,9 @@ import java.util.UUID;
 /**
  * Cómo se ve una solicitud de colaboración hacia afuera.
  *
- * <p>Los tres campos de contacto solo vienen con contenido cuando el estado es ACEPTADA: antes de
- * la aceptación no hay nada que mostrar, y esa es justamente la garantía de consentimiento. Van
- * separados para que se distinga lo que la persona decidió no compartir de lo que no tiene.</p>
+ * <p>Los datos de las dos partes solo tienen contenido cuando el estado es ACEPTADA: antes de la
+ * aceptación no hay nada que mostrar, y esa es justamente la garantía de consentimiento. Quién ve
+ * cuál de los dos lados lo decide el BFF, que es el que sabe quién está mirando.</p>
  */
 public record SolicitudRespuesta(
         UUID id,
@@ -19,18 +19,22 @@ public record SolicitudRespuesta(
         UUID proyectoId,
         String mensaje,
         EstadoSolicitud estado,
-        String correoCompartido,
-        String telefonoCompartido,
-        String redesCompartidas,
+        DatosDeContacto contactoSolicitante,
+        DatosDeContacto contactoSolicitado,
         Instant fechaSolicitud,
         Instant fechaRespuesta
 ) {
     /** Traduce la entidad a la respuesta de la API. Nunca se expone la entidad JPA. */
     public static SolicitudRespuesta desdeEntidad(SolicitudContacto s) {
+        boolean aceptada = s.getEstado() == EstadoSolicitud.ACEPTADA;
         return new SolicitudRespuesta(
                 s.getId(), s.getSolicitanteId(), s.getSolicitadoId(), s.getProyectoId(),
                 s.getMensaje(), s.getEstado(),
-                s.getCorreoCompartido(), s.getTelefonoCompartido(), s.getRedesCompartidas(),
+                // Mientras no haya aceptación no sale ningún dato, ni siquiera el de quien pidió.
+                aceptada ? new DatosDeContacto(s.getCorreoSolicitante(), s.getTelefonoSolicitante(),
+                        s.getRedesSolicitante()) : DatosDeContacto.NINGUNO,
+                aceptada ? new DatosDeContacto(s.getCorreoSolicitado(), s.getTelefonoSolicitado(),
+                        s.getRedesSolicitado()) : DatosDeContacto.NINGUNO,
                 s.getFechaSolicitud(), s.getFechaRespuesta());
     }
 }

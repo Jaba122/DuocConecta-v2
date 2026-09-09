@@ -80,6 +80,9 @@ function Fila({ solicitud, esRecibida, alResponder }) {
         {esRecibida ? 'quiere compartir contacto contigo' : 'le pediste contacto'}
         {otra?.carrera ? ` · ${otra.carrera}` : ''}
       </p>
+      {solicitud.proyectoNombre && (
+        <p className="sobre-proyecto">Sobre <strong>{solicitud.proyectoNombre}</strong></p>
+      )}
       {solicitud.mensaje && <p className="cita">“{solicitud.mensaje}”</p>}
 
       {puedeResponder && (
@@ -119,6 +122,9 @@ export function MisColaboraciones({ recibidas, enviadas }) {
           <div key={s.id} className="contacto">
             <p className="persona">{otra?.nombre ?? 'Alguien de la comunidad'}</p>
             <p className="detalle">{[otra?.carrera, otra?.sede].filter(Boolean).join(' · ')}</p>
+            {s.proyectoNombre && (
+              <p className="sobre-proyecto">Sobre <strong>{s.proyectoNombre}</strong></p>
+            )}
             <div className="acciones">
               <button className="secundario" onClick={() => setAbierta({ s, otra })}>
                 Ver datos de contacto
@@ -140,13 +146,11 @@ export function MisColaboraciones({ recibidas, enviadas }) {
 }
 
 /**
- * Al aceptar no se escribe nada: el BFF arma los datos con el perfil propio. El teléfono se
- * pregunta aparte porque es el más sensible.
+ * Al aceptar no se escribe nada: el BFF arma los datos con el perfil propio.
+ *
+ * <p>La decisión sobre el teléfono la toma quien acepta en la ventana de confirmación, así que
+ * llega ya resuelta. Rechazar no comparte nada y no necesita confirmación.</p>
  */
-export async function responder(solicitud, aceptar) {
-  const compartirTelefono = aceptar && confirm(
-    'Al aceptar se comparte tu correo institucional y tus redes.\n\n'
-    + '¿Quieres compartir también tu teléfono?')
-
+export async function responder(solicitud, aceptar, compartirTelefono = false) {
   await responderColaboracion(solicitud.id, aceptar, compartirTelefono)
 }

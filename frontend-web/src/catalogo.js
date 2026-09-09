@@ -75,3 +75,9 @@ export function fechaLarga(valor) {
   if (!valor) return ''
   return new Date(valor).toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
 }
+
+/** Qué decir en el botón según cómo esté la solicitud por este proyecto. */
+export const TEXTO_SOLICITUD = {
+  PENDIENTE: 'Solicitud enviada',
+  ACEPTADA: 'Ya colaboran',
+}

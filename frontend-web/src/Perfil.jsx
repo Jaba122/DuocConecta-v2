@@ -8,6 +8,7 @@ import {
 import { claimsDelToken } from './auth'
 import Aviso, { useAviso } from './Aviso'
 import FormularioProyecto from './FormularioProyecto'
+import AceptarSolicitud from './AceptarSolicitud'
 import { MisColaboraciones, MisSolicitudes, responder, useColaboraciones } from './Solicitudes'
 import { ESCUELAS, ESTADOS, SEDES, SIN_CARRERA, iniciales } from './catalogo'
 
@@ -22,15 +23,20 @@ export default function Perfil() {
     obtenerMiPerfil().then(setDatos).catch((e) => setError(e.message))
   }, [])
 
-  const responderSolicitud = async (solicitud, aceptar) => {
+  // Aceptar abre la ventana de consentimiento; rechazar no comparte nada y va directo.
+  const [aceptando, setAceptando] = useState(null)
+
+  const responderSolicitud = async (solicitud, aceptar, compartirTelefono = false) => {
     try {
-      await responder(solicitud, aceptar)
+      await responder(solicitud, aceptar, compartirTelefono)
       avisar(aceptar
         ? 'Aceptaste la solicitud: ya puede ver tus datos de contacto.'
         : 'Rechazaste la solicitud. No se compartió ningún dato.')
       colaboraciones.recargar()
     } catch (e) {
       setError(e.message)
+    } finally {
+      setAceptando(null)
     }
   }
 
@@ -60,7 +66,8 @@ export default function Perfil() {
           <MisSolicitudes
             recibidas={colaboraciones.recibidas}
             enviadas={colaboraciones.enviadas}
-            alResponder={responderSolicitud}
+            alResponder={(s, aceptar) =>
+              (aceptar ? setAceptando(s) : responderSolicitud(s, false))}
           />
 
           <h2 style={{ marginTop: 26, marginBottom: 6 }}>Mis colaboraciones</h2>
@@ -72,6 +79,15 @@ export default function Perfil() {
 
         <MisProyectos alAvisar={avisar} alFallar={setError} />
       </div>
+
+      {aceptando && (
+        <AceptarSolicitud
+          solicitud={aceptando}
+          alConfirmar={(compartirTelefono) =>
+            responderSolicitud(aceptando, true, compartirTelefono)}
+          alCerrar={() => setAceptando(null)}
+        />
+      )}
 
       <Aviso texto={aviso} />
     </section>

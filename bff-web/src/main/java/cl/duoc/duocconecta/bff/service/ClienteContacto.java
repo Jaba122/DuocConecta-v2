@@ -5,6 +5,7 @@ import cl.duoc.duocconecta.bff.dto.DatosDeContacto;
 import cl.duoc.duocconecta.bff.dto.SolicitudColaboracionDatos;
 import cl.duoc.duocconecta.comun.seguridad.UsuarioActual;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.core.ParameterizedTypeReference;
@@ -30,13 +31,23 @@ public class ClienteContacto {
         this.usuarioActual = usuarioActual;
     }
 
-    /** Envía una solicitud de colaboración a otra persona. */
-    public ColaboracionRespuesta crear(SolicitudColaboracionDatos solicitud) {
+    /** Envía una solicitud, adjuntando los datos que ofrece quien pide. */
+    public ColaboracionRespuesta crear(SolicitudColaboracionDatos solicitud, DatosDeContacto mios) {
+        // HashMap y no Map.of porque proyectoId es opcional, y Map.of no admite nulos.
+        Map<String, Object> cuerpo = new HashMap<>();
+        cuerpo.put("solicitadoId", solicitud.solicitadoId());
+        cuerpo.put("proyectoId", solicitud.proyectoId());
+        cuerpo.put("mensaje", texto(solicitud.mensaje()));
+        cuerpo.put("contactoSolicitante", Map.of(
+                "correo", texto(mios.correo()),
+                "telefono", texto(mios.telefono()),
+                "redes", texto(mios.redes())));
+
         return cliente.post()
                 .uri(RUTA)
                 .header(HttpHeaders.AUTHORIZATION, usuarioActual.cabeceraAuthorization())
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(solicitud)
+                .body(cuerpo)
                 .retrieve()
                 .body(ColaboracionRespuesta.class);
     }

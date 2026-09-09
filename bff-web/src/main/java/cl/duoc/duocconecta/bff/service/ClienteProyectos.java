@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -35,6 +36,25 @@ public class ClienteProyectos {
     public ClienteProyectos(RestClient clienteMsProyectos, UsuarioActual usuarioActual) {
         this.cliente = clienteMsProyectos;
         this.usuarioActual = usuarioActual;
+    }
+
+    /**
+     * Nombre de un proyecto, para dar contexto a una solicitud de colaboración.
+     *
+     * <p>Devuelve null si el proyecto no existe o si quien pregunta no puede verlo. Que un
+     * proyecto se haya borrado no es motivo para que falle la bandeja entera.</p>
+     */
+    public String nombreDe(UUID id) {
+        try {
+            ProyectoRespuesta proyecto = cliente.get()
+                    .uri(RUTA + "/{id}", id)
+                    .header(HttpHeaders.AUTHORIZATION, usuarioActual.cabeceraAuthorization())
+                    .retrieve()
+                    .body(ProyectoRespuesta.class);
+            return proyecto == null ? null : proyecto.nombre();
+        } catch (HttpClientErrorException ignorada) {
+            return null;
+        }
     }
 
     /** Proyectos que la persona autenticada tiene permitido ver. */

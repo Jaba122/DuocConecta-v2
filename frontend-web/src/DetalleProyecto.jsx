@@ -4,9 +4,16 @@
 // lo único que intercambia datos privados, y solo si la otra persona acepta.
 import { useEffect, useState } from 'react'
 import { listarComentarios, comentarProyecto } from './api'
-import { ESTADOS, iniciales, fechaCorta, fechaLarga } from './catalogo'
+import { ESTADOS, iniciales, fechaCorta, fechaLarga, TEXTO_SOLICITUD } from './catalogo'
 
-export default function DetalleProyecto({ proyecto, esMio, yaSolicitado, alPedirContacto, alEditar, alBorrar, alCerrar }) {
+/** Tamaño legible: 1.4 MB dice más que 1468006. */
+function pesoLegible(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+export default function DetalleProyecto({ proyecto, esMio, estadoSolicitud, alPedirContacto, alEditar, alBorrar, alCerrar }) {
   const [comentarios, setComentarios] = useState(null)
   const [texto, setTexto] = useState('')
   const [error, setError] = useState(null)
@@ -65,11 +72,12 @@ export default function DetalleProyecto({ proyecto, esMio, yaSolicitado, alPedir
 
           <div className="tarjeta">
             <p className="rotulo">Archivos adjuntos</p>
-            {proyecto.archivosAdjuntos?.length > 0 ? (
-              proyecto.archivosAdjuntos.map((a) => (
-                <div key={a} className="adjunto">
+            {proyecto.adjuntos?.length > 0 ? (
+              proyecto.adjuntos.map((a) => (
+                <div key={a.id ?? a.url} className="adjunto">
                   <span className="hoja" />
-                  <span style={{ flex: 1 }}>{a}</span>
+                  <a href={a.url} target="_blank" rel="noreferrer" style={{ flex: 1 }}>{a.nombre}</a>
+                  {a.tamanoBytes ? <span className="ayuda">{pesoLegible(a.tamanoBytes)}</span> : null}
                 </div>
               ))
             ) : (
@@ -94,11 +102,17 @@ export default function DetalleProyecto({ proyecto, esMio, yaSolicitado, alPedir
             <div className="consentimiento">
               <h4>Contacto bajo consentimiento</h4>
               <p>
-                Al enviar la solicitud, {primerNombre} decide si acepta. Los datos de contacto se
-                intercambian solo si acepta.
+                {estadoSolicitud === 'ACEPTADA'
+                  ? `${primerNombre} aceptó: los datos de contacto de ambos están en tu perfil.`
+                  : `Pedir contacto es ofrecer el tuyo. ${primerNombre} decide si acepta, y solo
+                     entonces cada uno ve los datos del otro.`}
               </p>
-              <button className="principal" disabled={yaSolicitado} onClick={alPedirContacto}>
-                {yaSolicitado ? 'Solicitud enviada' : 'Pedir contacto'}
+              <button
+                className="principal"
+                disabled={Boolean(estadoSolicitud)}
+                onClick={alPedirContacto}
+              >
+                {TEXTO_SOLICITUD[estadoSolicitud] ?? 'Pedir contacto'}
               </button>
             </div>
           )}

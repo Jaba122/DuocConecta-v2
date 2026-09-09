@@ -2,6 +2,7 @@ package cl.duoc.duocconecta.contacto.service;
 
 import cl.duoc.duocconecta.contacto.domain.EstadoSolicitud;
 import cl.duoc.duocconecta.contacto.domain.SolicitudContacto;
+import cl.duoc.duocconecta.contacto.dto.DatosDeContacto;
 import cl.duoc.duocconecta.contacto.dto.DecisionSolicitud;
 import cl.duoc.duocconecta.contacto.dto.SolicitudDatos;
 import cl.duoc.duocconecta.contacto.dto.SolicitudRespuesta;
@@ -29,19 +30,25 @@ public class ServicioSolicitudes {
 
     private final RepositorioSolicitudes repositorioSolicitudes;
 
-    /** Ni a uno mismo, ni dos pendientes a la misma persona: la bandeja no se debe poder inundar. */
+    /** Ni a uno mismo, ni dos vivas por el mismo proyecto: la bandeja no se debe poder inundar. */
     @Transactional
     public SolicitudRespuesta crear(SolicitudDatos dto, String solicitanteId) {
         if (solicitanteId.equals(dto.solicitadoId())) {
             throw new SolicitudInvalidaException("No puedes solicitar contacto contigo mismo");
         }
 
-        repositorioSolicitudes.findBySolicitanteIdAndSolicitadoIdAndEstado(
-                        solicitanteId, dto.solicitadoId(), EstadoSolicitud.PENDIENTE)
+        repositorioSolicitudes.buscarViva(solicitanteId, dto.solicitadoId(), dto.proyectoId(),
+                        List.of(EstadoSolicitud.PENDIENTE, EstadoSolicitud.ACEPTADA))
                 .ifPresent(s -> {
-                    throw new ConflictoDeEstadoException(
-                            "Ya le enviaste una solicitud a esta persona y sigue pendiente");
+                    throw new ConflictoDeEstadoException(s.getEstado() == EstadoSolicitud.ACEPTADA
+                            ? "Ya colaboran en este proyecto."
+                            : "Ya le enviaste una solicitud por este proyecto y sigue pendiente.");
                 });
+
+        // Pedir contacto es ofrecer el propio. Se guarda ahora, pero no se muestra a nadie
+        // mientras la solicitud siga pendiente.
+        DatosDeContacto mios = dto.contactoSolicitante() != null
+                ? dto.contactoSolicitante() : DatosDeContacto.NINGUNO;
 
         SolicitudContacto solicitud = SolicitudContacto.builder()
                 .solicitanteId(solicitanteId)
@@ -49,6 +56,9 @@ public class ServicioSolicitudes {
                 .proyectoId(dto.proyectoId())
                 .mensaje(dto.mensaje())
                 .estado(EstadoSolicitud.PENDIENTE)
+                .correoSolicitante(mios.correo())
+                .telefonoSolicitante(mios.telefono())
+                .redesSolicitante(mios.redes())
                 .build();
 
         // TODO (EP3): publicar el evento "solicitud.creada" para avisar por correo.
@@ -75,9 +85,9 @@ public class ServicioSolicitudes {
 
         if (respuesta.aceptar()) {
             solicitud.setEstado(EstadoSolicitud.ACEPTADA);
-            solicitud.setCorreoCompartido(respuesta.correo());
-            solicitud.setTelefonoCompartido(respuesta.telefono());
-            solicitud.setRedesCompartidas(respuesta.redes());
+            solicitud.setCorreoSolicitado(respuesta.correo());
+            solicitud.setTelefonoSolicitado(respuesta.telefono());
+            solicitud.setRedesSolicitado(respuesta.redes());
         } else {
             solicitud.setEstado(EstadoSolicitud.RECHAZADA);
         }

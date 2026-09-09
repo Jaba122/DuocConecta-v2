@@ -10,6 +10,7 @@ const SUGERENCIA = 'Hola, me interesa tu proyecto y me gustaría sumarme.'
 export default function PedirContacto({ proyecto, alEnviar, alCerrar }) {
   const [mensaje, setMensaje] = useState(SUGERENCIA)
   const [enviando, setEnviando] = useState(false)
+  const [compartirTelefono, setCompartirTelefono] = useState(false)
 
   const autor = proyecto.autor ?? {}
   const nombre = autor.nombre ?? 'quien publicó este proyecto'
@@ -18,7 +19,7 @@ export default function PedirContacto({ proyecto, alEnviar, alCerrar }) {
     evento.preventDefault()
     setEnviando(true)
     try {
-      await alEnviar(mensaje.trim())
+      await alEnviar(mensaje.trim(), compartirTelefono)
     } finally {
       setEnviando(false)
     }
@@ -64,9 +65,17 @@ export default function PedirContacto({ proyecto, alEnviar, alCerrar }) {
             <div className="consentimiento">
               <h4>Nada se comparte todavía</h4>
               <p>
-                {nombre.split(' ')[0]} decide si acepta. Los datos de contacto se intercambian
-                solo si acepta.
+                Pedir contacto es ofrecer el tuyo. Si {nombre.split(' ')[0]} acepta, cada uno verá
+                el correo y las redes del otro. Si no acepta, no ve nada tuyo.
               </p>
+              <label className="casilla">
+                <input
+                  type="checkbox"
+                  checked={compartirTelefono}
+                  onChange={(e) => setCompartirTelefono(e.target.checked)}
+                />
+                Compartir también mi teléfono
+              </label>
             </div>
 
             <div className="acciones">

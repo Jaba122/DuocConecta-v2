@@ -1,7 +1,11 @@
-// Ventana con los datos que alguien decidió compartir al aceptar una solicitud.
+// Ventana con los datos que la otra persona compartió.
 //
 // Van detrás de un botón y no a la vista en la tarjeta: son datos que esa persona compartió a
 // propósito, y no tienen por qué quedar en pantalla mientras alguien mira por encima del hombro.
+//
+// El campo `contacto` lo resuelve el BFF, que es quien sabe quién está mirando. Antes llegaban los
+// dos lados y esta pantalla elegía uno: en las solicitudes recibidas elegía mal y mostraba los
+// datos propios con el nombre de la otra persona.
 import { iniciales } from './catalogo'
 
 export default function DatosDeContacto({ colaboracion, persona, alCerrar }) {
@@ -28,9 +32,9 @@ export default function DatosDeContacto({ colaboracion, persona, alCerrar }) {
 
             <div className="contacto">
               <dl>
-                <Dato etiqueta="Correo" valor={colaboracion.correoCompartido} />
-                <Dato etiqueta="Teléfono" valor={colaboracion.telefonoCompartido} />
-                <Dato etiqueta="Redes" valor={colaboracion.redesCompartidas} />
+                <Dato etiqueta="Correo" valor={colaboracion.contacto?.correo} />
+                <Dato etiqueta="Teléfono" valor={colaboracion.contacto?.telefono} />
+                <Dato etiqueta="Redes" valor={colaboracion.contacto?.redes} />
               </dl>
             </div>
 

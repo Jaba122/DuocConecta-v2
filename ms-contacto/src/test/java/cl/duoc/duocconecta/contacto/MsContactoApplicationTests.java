@@ -77,14 +77,15 @@ class MsContactoApplicationTests {
                 .andExpect(status().isBadRequest());
     }
 
-    /** Dos solicitudes seguidas a la misma persona: la segunda es 409, no 403. */
+    /** Repetir la solicitud por el mismo proyecto es 409, no 403. */
     @Test
-    @DisplayName("Repetir una solicitud pendiente responde 409 y no 403")
+    @DisplayName("Repetir una solicitud por el mismo proyecto responde 409")
     void solicitudRepetidaResponde409() throws Exception {
         RequestPostProcessor quienPide = tokenDe("luis.rojas@duocuc.cl");
         String cuerpo = """
                 {
                   "solicitadoId": "oid-marta.diaz@duocuc.cl",
+                  "proyectoId": "11111111-1111-1111-1111-111111111111",
                   "mensaje": "Me sumo"
                 }""";
 
@@ -98,11 +99,69 @@ class MsContactoApplicationTests {
     }
 
     /**
+     * A la misma persona se le puede pedir contacto por otro de sus proyectos.
+     *
+     * <p>Antes la unicidad era por par de personas, así que pedirle contacto a alguien una vez
+     * bloqueaba todos sus demás proyectos.</p>
+     */
+    @Test
+    @DisplayName("Se puede pedir contacto a la misma persona por otro proyecto")
+    void otroProyectoDeLaMismaPersonaSePuedePedir() throws Exception {
+        RequestPostProcessor quienPide = tokenDe("sofia.mena@duocuc.cl");
+        String plantilla = """
+                {
+                  "solicitadoId": "oid-rodrigo.paz@duocuc.cl",
+                  "proyectoId": "%s",
+                  "mensaje": "Me interesa"
+                }""";
+
+        mockMvc.perform(post("/api/v1/colaboraciones").with(quienPide)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(plantilla.formatted("22222222-2222-2222-2222-222222222222")))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/colaboraciones").with(quienPide)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(plantilla.formatted("33333333-3333-3333-3333-333333333333")))
+                .andExpect(status().isCreated());
+    }
+
+    /** Si ya colaboran en ese proyecto, no tiene sentido volver a pedirlo. */
+    @Test
+    @DisplayName("Pedir contacto por un proyecto ya aceptado responde 409")
+    void proyectoYaAceptadoResponde409() throws Exception {
+        RequestPostProcessor quienPide = tokenDe("ivan.soto@duocuc.cl");
+        RequestPostProcessor quienRecibe = tokenDe("elena.mora@duocuc.cl");
+        String cuerpo = """
+                {
+                  "solicitadoId": "oid-elena.mora@duocuc.cl",
+                  "proyectoId": "44444444-4444-4444-4444-444444444444",
+                  "mensaje": "Hola"
+                }""";
+
+        String creada = mockMvc.perform(post("/api/v1/colaboraciones").with(quienPide)
+                        .contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        mockMvc.perform(patch("/api/v1/colaboraciones/" + JsonPath.read(creada, "$.id") + "/responder")
+                        .with(quienRecibe)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aceptar\": true, \"correo\": \"elena.mora@duocuc.cl\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/colaboraciones").with(quienPide)
+                        .contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isConflict());
+    }
+
+    /**
      * El recorrido completo del consentimiento.
      *
-     * <p>Una persona pide contacto, la solicitud queda PENDIENTE y sin datos compartidos; la otra
-     * acepta eligiendo qué mostrar, y solo entonces esos datos aparecen en la bandeja de quien
-     * hizo la solicitud. Es exactamente la garantía que la plataforma promete.</p>
+     * <p>Una persona pide contacto ofreciendo los suyos, la solicitud queda PENDIENTE y sin nada
+     * visible; la otra acepta eligiendo qué mostrar, y solo entonces <b>las dos partes</b> ven los
+     * datos de la otra. Es exactamente la garantía que la plataforma promete, y en los dos
+     * sentidos.</p>
      */
     @Test
     @DisplayName("Los datos de contacto aparecen solo después de que la otra persona acepta")
@@ -116,11 +175,18 @@ class MsContactoApplicationTests {
                         .content("""
                                 {
                                   "solicitadoId": "oid-ana.lagos@profesor.duoc.cl",
-                                  "mensaje": "Me interesa tu proyecto"
+                                  "mensaje": "Me interesa tu proyecto",
+                                  "contactoSolicitante": {
+                                    "correo": "pedro.vera@duocuc.cl",
+                                    "telefono": "912345678",
+                                    "redes": "@pedrovera"
+                                  }
                                 }"""))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.estado").value("PENDIENTE"))
-                .andExpect(jsonPath("$.correoCompartido").doesNotExist())
+                // Mientras esté pendiente no sale ningún dato, ni siquiera el que ofreció quien pidió.
+                .andExpect(jsonPath("$.contactoSolicitante.correo").doesNotExist())
+                .andExpect(jsonPath("$.contactoSolicitado.correo").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
 
         String id = JsonPath.read(creada, "$.id");
@@ -149,16 +215,25 @@ class MsContactoApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.estado").value("ACEPTADA"));
 
-        // Y recién ahora quien pidió ve los datos, cada uno en su campo. El teléfono no viene
-        // porque ella no lo compartió, que es distinto de no tenerlo.
+        // Quien pidió ve los datos de ella. El teléfono no viene porque no lo compartió, que es
+        // distinto de no tenerlo.
         mockMvc.perform(get("/api/v1/colaboraciones/enviadas").with(solicitante))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id == '" + id + "')].correoCompartido")
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].contactoSolicitado.correo")
                         .value("ana.lagos@profesor.duoc.cl"))
-                .andExpect(jsonPath("$[?(@.id == '" + id + "')].redesCompartidas")
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].contactoSolicitado.redes")
                         .value("@analagos"))
-                .andExpect(jsonPath("$[?(@.id == '" + id + "')].telefonoCompartido[0]")
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].contactoSolicitado.telefono[0]")
                         .doesNotExist());
+
+        // Y ella ve los de él, que es lo que antes no ocurría: el intercambio era en un solo
+        // sentido y quien aceptaba se quedaba sin forma de contactar a quien le había escrito.
+        mockMvc.perform(get("/api/v1/colaboraciones/recibidas").with(solicitado))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].contactoSolicitante.correo")
+                        .value("pedro.vera@duocuc.cl"))
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].contactoSolicitante.telefono")
+                        .value("912345678"));
 
         // Una solicitud ya respondida no se responde de nuevo. Es 409 y no 403: quien responde
         // sí tiene permiso, lo que ya no está disponible es el estado pendiente.
