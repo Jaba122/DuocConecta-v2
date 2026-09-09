@@ -251,14 +251,18 @@ DuocConecta/
 ├── pom.xml                 # parent (packaging pom), versiones centralizadas
 ├── docker-compose.yml      # 1 contenedor postgres:16.15-alpine
 ├── docker/postgres/init.sql
-├── docs/azure-entra-id.md  # guía de configuración del IDaaS
-├── GUIA-EQUIPO.md          # cómo operar el proyecto y qué mirar cuando algo falla
-├── common-seguridad/       # validación de JWT, manejo de errores y registro, compartidos
+├── docs/azure-entra-id.md  # guía del IDaaS (fuera del repositorio, a propósito)
+│
+│   # Los módulos, del frontend hacia adentro. En GitLab se ven en orden
+│   # alfabético: Git ordena así las entradas del árbol y no se puede cambiar.
+├── frontend-web/           # React + Vite (no es módulo Maven)
+├── bff-web/                # puerto 8080
 ├── ms-usuarios/            # puerto 8081, schema `usuarios`
 ├── ms-proyectos/           # puerto 8082, schema `proyectos`  — vitrina de proyectos
 ├── ms-contacto/            # puerto 8083, schema `contacto`   — solicitudes de colaboración
-├── bff-web/                # puerto 8080
-└── frontend-web/           # React + Vite (no es módulo Maven)
+├── common-seguridad/       # validación de JWT, manejo de errores y registro, compartidos
+├── docker/                 # Dockerfile de los servicios e init.sql de PostgreSQL
+└── infra/                  # aws.sh y la definición de la tarea de ECS
 ```
 
 **Frontend.** Dos pantallas dentro de la aplicación (`Vitrina` y `Perfil`) más el diagnóstico del

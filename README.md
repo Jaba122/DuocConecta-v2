@@ -23,9 +23,10 @@ DuocConecta junta ese trabajo en un solo lugar y permite que las personas se enc
 **Nadie ve tu correo ni tu teléfono hasta que tú aceptas.** Esta es la regla central de la
 plataforma, no una opción escondida en la configuración.
 
-Cuando alguien quiere contactarte, te llega una solicitud con su mensaje. Tus datos de contacto
-**no viajan** en ese momento. Recién si tú aceptas, se comparten —y decides qué compartes—. Si
-rechazas, esa persona nunca ve nada tuyo.
+Cuando alguien quiere contactarte, te llega una solicitud con su mensaje. Ni tus datos ni los suyos
+viajan en ese momento. **Recién si tú aceptas se comparten, y en los dos sentidos**: pedir contacto
+es ofrecer el propio. Cada uno decide si incluye su teléfono. Si rechazas, esa persona nunca ve nada
+tuyo y tú no ves nada suyo.
 
 Comentar un proyecto tampoco comparte datos de contacto. Y puedes ocultar tu perfil de las
 búsquedas cuando quieras, desde tu propio perfil.
@@ -54,18 +55,21 @@ Asignatura **DSY1107 · Desarrollo Cloud Native I** — Evaluación Parcial 1, q
 nube**.
 
 - Arquitectura, convenciones y decisiones fijas → [`CLAUDE.md`](CLAUDE.md)
-- Cómo operar, depurar y desplegar → [`GUIA-EQUIPO.md`](GUIA-EQUIPO.md)
 
 ## Módulos
 
+En el orden en que conviene recorrerlos: del frontend hacia adentro.
+
 | Módulo | Puerto | Qué es |
 |---|---|---|
-| `common-seguridad` | — | Librería compartida: validación de JWT (audiencia, roles, dominios), manejo de errores y registro de peticiones |
+| `frontend-web` | 5173 | SPA React + Vite con MSAL. No es módulo Maven |
+| `bff-web` | 8080 | Backend for Frontend: valida el token y agrega respuestas de varios servicios |
 | `ms-usuarios` | 8081 | Identidad y perfil. Dueño del schema `usuarios` |
 | `ms-proyectos` | 8082 | Vitrina de proyectos y comentarios. Schema `proyectos` |
 | `ms-contacto` | 8083 | Solicitudes de colaboración. Schema `contacto` |
-| `bff-web` | 8080 | Backend for Frontend: valida el token y agrega respuestas de varios servicios |
-| `frontend-web` | 5173 | SPA React + Vite con MSAL. No es módulo Maven |
+| `common-seguridad` | — | Librería compartida: validación de JWT (audiencia, roles, dominios), manejo de errores y registro de peticiones |
+| `docker` | — | Dockerfile de los cuatro servicios e inicialización de PostgreSQL |
+| `infra` | — | Despliegue en AWS: `aws.sh` y la definición de la tarea de ECS |
 
 ## Arquitectura
 
@@ -122,6 +126,8 @@ sube al repositorio.**
 | `LOG_NIVEL` | No | Por defecto `INFO`. `DEBUG` registra también las peticiones que salen bien |
 | `DB_URL` · `DB_USER` · `DB_PASSWORD` | No | Valores locales por defecto |
 | `MS_USUARIOS_URL` · `MS_PROYECTOS_URL` · `MS_CONTACTO_URL` | No | Por defecto `localhost` en sus puertos |
+| `S3_BUCKET_ADJUNTOS` | No | Bucket de los archivos adjuntos. Vacío en local: sin él, firmar una subida falla en vez de escribir en un bucket equivocado |
+| `AWS_REGION` | No | Por defecto `us-east-1` |
 
 ## Endpoints
 
@@ -143,6 +149,8 @@ sube al repositorio.**
 | `POST /` · `GET /` · `GET /{id}` | Publica, lista y muestra proyectos |
 | `PUT /{id}` · `DELETE /{id}` | Edita y borra; solo el propietario |
 | `GET`/`POST /{id}/comentarios` | Hilo de comentarios. Comentar no comparte datos de contacto |
+| `POST /{id}/colaboradores` | Suma un colaborador; solo el propietario y solo en proyectos compartidos |
+| `POST /adjuntos/firma` | Autoriza subir un archivo: devuelve una URL temporal para mandarlo directo a S3 |
 
 ### `ms-contacto` — `/api/v1/colaboraciones`
 
@@ -159,7 +167,7 @@ sube al repositorio.**
 | `GET /mi-perfil` | Junta perfil y redes en una sola llamada |
 | `GET /vitrina` | Suma a cada proyecto quién lo publicó, que `ms-proyectos` no sabe |
 | `GET`/`POST /vitrina/{id}/comentarios` | Suma el nombre de quien comentó |
-| `/colaboraciones/**` | Al aceptar, arma los datos de contacto desde el perfil de quien acepta |
+| `/colaboraciones/**` | Arma los datos de contacto desde el perfil de cada parte, resuelve **cuál de los dos lados** le toca ver a quien consulta, y suma el nombre del proyecto |
 
 ## Seguridad
 
@@ -184,12 +192,13 @@ la palabra `Bearer`.
 ## Tests
 
 ```bash
-mvn test        # 35 pruebas
+mvn test        # 44 pruebas
 ```
 
-Cubren que el contexto levante, que una ruta protegida responda 401 sin token, que un dominio
-externo reciba 403, y el recorrido completo del consentimiento en `ms-contacto`: pedir contacto,
-aceptar, y recién entonces ver los datos.
+Cubren que el contexto levante, que una ruta protegida responda 401 sin token, que un token sin rol
+reciba 403 y no un 500, que un dominio externo reciba 403, y el recorrido completo del
+consentimiento en `ms-contacto`: pedir contacto ofreciendo el propio, aceptar, y recién entonces
+ver **las dos partes** los datos de la otra.
 
 ## Nota sobre la versión de Spring Boot
 
