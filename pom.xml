@@ -30,6 +30,7 @@
     -->
     <modules>
         <module>common-seguridad</module>
+        <module>common-mensajeria</module>
         <module>ms-usuarios</module>
         <module>ms-proyectos</module>
         <module>ms-contacto</module>
@@ -69,6 +70,13 @@
                 <groupId>cl.duoc.duocconecta</groupId>
                 <artifactId>common-seguridad</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <!-- Módulo propio con la mensajería compartida por todos los servicios. -->
+            <dependency>
+                <groupId>cl.duoc.duocconecta</groupId>
+                <artifactId>common-mensajeria</artifactId>
+                <version>${project.version}</version>  
             </dependency>
         </dependencies>
     </dependencyManagement>
