@@ -1,5 +1,5 @@
 package cl.duoc.duocconecta.mensajeria;
 
-public class UsuarioCreadoEvent {
-    
-}
+import java.util.UUID;
+
+public record UsuarioCreadoEvent(UUID id, String nombre, String correo, String rol) {}

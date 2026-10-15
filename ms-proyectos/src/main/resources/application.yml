@@ -48,6 +48,15 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:duocconecta}
     password: ${RABBITMQ_PASSWORD:duocconecta}
+    
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2s
+          multiplier: 2
 
 duocconecta:
   # Adjuntos de los proyectos. El bucket llega por variable de entorno; en local queda vacío y
