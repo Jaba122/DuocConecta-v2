@@ -52,7 +52,8 @@ Una cuenta que no sea de Duoc no puede entrar, y tampoco se le crea un perfil.
 
 Asignatura **DSY1107 · Desarrollo Cloud Native I** — Evaluación Parcial 1, que evalúa
 **autenticación con Azure AD (Entra ID)**, **validación de JWT en cada capa** y **despliegue en la
-nube**.
+nube**. La integración con **RabbitMQ** (mensajería asíncrona entre microservicios) se suma sobre
+esa base.
 
 - Arquitectura, convenciones y decisiones fijas → [`CLAUDE.md`](CLAUDE.md)
 
@@ -64,10 +65,11 @@ En el orden en que conviene recorrerlos: del frontend hacia adentro.
 |---|---|---|
 | `frontend-web` | 5173 | SPA React + Vite con MSAL. No es módulo Maven |
 | `bff-web` | 8080 | Backend for Frontend: valida el token y agrega respuestas de varios servicios |
-| `ms-usuarios` | 8081 | Identidad y perfil. Dueño del schema `usuarios` |
-| `ms-proyectos` | 8082 | Vitrina de proyectos y comentarios. Schema `proyectos` |
+| `ms-usuarios` | 8081 | Identidad y perfil. Dueño del schema `usuarios`. **Publica** eventos en RabbitMQ |
+| `ms-proyectos` | 8082 | Vitrina de proyectos y comentarios. Schema `proyectos`. **Consume** eventos de RabbitMQ |
 | `ms-contacto` | 8083 | Solicitudes de colaboración. Schema `contacto` |
 | `common-seguridad` | — | Librería compartida: validación de JWT (audiencia, roles, dominios), manejo de errores y registro de peticiones |
+| `common-mensajeria` | — | Librería compartida: nombres de exchanges, colas y routing keys, y los eventos que viajan por RabbitMQ |
 | `docker` | — | Dockerfile de los cuatro servicios e inicialización de PostgreSQL |
 | `infra` | — | Despliegue en AWS: `aws.sh` y la definición de la tarea de ECS |
 
@@ -84,11 +86,63 @@ en profundidad — quien llegue salteándose una capa igual necesita un token v�
 El frontend solo conoce al BFF. Publicar, editar y borrar un proyecto van directo a `ms-proyectos`:
 ahí no hay nada que componer.
 
+Además de las llamadas HTTP, los microservicios se comunican **de forma asíncrona** por RabbitMQ
+(ver la sección siguiente).
+
+## Mensajería con RabbitMQ
+
+Los servicios no se llaman entre sí para avisar que algo pasó: publican un **evento** y quien le
+interese lo consume. Así el productor no depende de que el consumidor esté arriba.
+
+```
+ms-usuarios ──► usuarios.exchange ──(usuario.creado)──► publicaciones.usuario-creado ──► ms-proyectos
+ (productor)        (topic)                                      │
+                                                                 │ si falla tras los reintentos
+                                                                 ▼
+                                   dlx.duocconecta ──► publicaciones.usuario-creado.dlq
+                                      (direct)                   │
+                                                                 ▼
+                                                  log.error en ms-proyectos
+```
+
+### Eventos
+
+| Evento | Lo publica | Exchange · routing key | Cola | Lo consume |
+|---|---|---|---|---|
+| `usuario.creado` | `ms-usuarios`, cuando el primer `GET /me` crea el perfil | `usuarios.exchange` · `usuario.creado` | `publicaciones.usuario-creado` | `ms-proyectos` |
+
+El evento (`UsuarioCreadoEvent`) lleva `id`, `nombre`, `correo` y `rol`, y viaja como JSON.
+Los nombres de exchanges, colas y routing keys viven en `common-mensajeria`
+(`MensajeriaConstantes`): productor y consumidor los importan de ahí, así no se desincronizan.
+
+### Mensajes no entregados (DLQ)
+
+- La cola principal se declara con `x-dead-letter-exchange`, apuntando a `dlx.duocconecta`.
+- Si el consumidor falla, se reintenta **3 veces** (intervalo inicial de 2 s, multiplicador 2).
+  Después el mensaje **no se reencola**: pasa a la cola `publicaciones.usuario-creado.dlq`.
+- `ms-proyectos` escucha esa DLQ y registra con `log.error` la cola de origen, el motivo y el cuerpo
+  del mensaje.
+
+Para probarlo, haz que el consumidor lance una excepción: se ven los 3 intentos, luego el log de la
+DLQ, y el mensaje queda visible en la cola `.dlq` de la consola de RabbitMQ.
+
+### Consola de administración
+
+Con el compose levantado: <http://localhost:15672> (usuario y contraseña de `RABBITMQ_USER` y
+`RABBITMQ_PASSWORD`; por defecto `duocconecta`). Ahí se ven los exchanges, las colas, los bindings y
+los mensajes en la DLQ.
+
+### Pendiente
+
+- **Microservicio administrador de RabbitMQ**: crear y eliminar colas, exchanges y bindings por API
+  REST, protegido con el JWT de `common-seguridad`.
+- Más eventos de dominio (por ejemplo, de proyectos publicados o solicitudes de contacto).
+
 ## Requisitos
 
 - **Java 21**
 - **Maven 3.9+**
-- **Docker** con Compose v2 (para PostgreSQL)
+- **Docker** con Compose v2 (para PostgreSQL y RabbitMQ)
 - Un tenant de **Azure AD** con dos registros de aplicación. La guía de configuración del IDaaS se
   mantiene fuera del repositorio: pídela al equipo
 
@@ -96,7 +150,7 @@ ahí no hay nada que componer.
 
 ```bash
 cp .env.example .env          # completa AZURE_TENANT_ID y AZURE_CLIENT_ID
-docker compose up -d          # PostgreSQL
+docker compose up -d          # PostgreSQL y RabbitMQ
 
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # macOS
 mvn clean install
@@ -112,6 +166,10 @@ cd frontend-web && npm install && npm run dev    # 5173
 
 Con `-Dspring-boot.run.profiles=dev` se cargan datos de ejemplo, útiles para la demo.
 
+> **RabbitMQ y el health check:** `ms-usuarios` y `ms-proyectos` incluyen a RabbitMQ en
+> `/actuator/health`. Si el broker está caído, el health responde `503`. Levanta el compose antes
+> de correr los servicios o los tests que consultan el health.
+
 ### Variables
 
 `AZURE_TENANT_ID` y `AZURE_CLIENT_ID` no tienen valor por defecto a propósito: sin ellas los
@@ -125,6 +183,8 @@ sube al repositorio.**
 | `CORS_ORIGENES` | No | Por defecto `http://localhost:5173`. En la nube se le suma el dominio del API Gateway |
 | `LOG_NIVEL` | No | Por defecto `INFO`. `DEBUG` registra también las peticiones que salen bien |
 | `DB_URL` · `DB_USER` · `DB_PASSWORD` | No | Valores locales por defecto |
+| `RABBITMQ_HOST` · `RABBITMQ_PORT` | No | Por defecto `localhost` y `5672` |
+| `RABBITMQ_USER` · `RABBITMQ_PASSWORD` | No | Por defecto `duocconecta` (el mismo usuario que crea el compose) |
 | `MS_USUARIOS_URL` · `MS_PROYECTOS_URL` · `MS_CONTACTO_URL` | No | Por defecto `localhost` en sus puertos |
 | `S3_BUCKET_ADJUNTOS` | No | Bucket de los archivos adjuntos. Vacío en local: sin él, firmar una subida falla en vez de escribir en un bucket equivocado |
 | `AWS_REGION` | No | Por defecto `us-east-1` |
@@ -135,7 +195,7 @@ sube al repositorio.**
 
 | Método y ruta | Qué hace |
 |---|---|
-| `GET /me` | Auto-provisiona o lee el perfil propio desde los claims del token |
+| `GET /me` | Auto-provisiona o lee el perfil propio desde los claims del token. Al crear el perfil publica `usuario.creado` |
 | `PUT /me` | Completa carrera, sede, bio, teléfono y redes. El nombre viene del token |
 | `PATCH /me/visibilidad` | Muestra u oculta el perfil en las búsquedas |
 | `GET /me/redes` | Redes sociales del usuario autenticado |
@@ -183,6 +243,9 @@ Los errores salen en **Problem Details (RFC 9457)**, con el motivo en `detail`:
 | **403** | Token válido sin permiso: rol, dominio, o la acción es de otra persona |
 | **404** | No existe, o su dueño lo ocultó |
 | **409** | Choca con el estado actual (ya enviada, ya respondida) |
+
+Las credenciales de RabbitMQ, como el resto de los secretos, se pasan por variable de entorno y
+nunca se suben al repositorio.
 
 ### Swagger UI
 
