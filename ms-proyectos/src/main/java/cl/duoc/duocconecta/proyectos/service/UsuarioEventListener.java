@@ -1,8 +1,8 @@
 package cl.duoc.duocconecta.proyectos.service;
 
-import static cl.duoc.duocconecta.mensajeria.MensajeriaConstantes.COLA_PUBLICACIONES_DLQ;
-import static cl.duoc.duocconecta.mensajeria.MensajeriaConstantes.COLA_PUBLICACIONES_USUARIO_CREADO;
+import static cl.duoc.duocconecta.mensajeria.MensajeriaConstantes.*;
 
+import cl.duoc.duocconecta.mensajeria.SolicitudCreadaEvent;
 import cl.duoc.duocconecta.mensajeria.UsuarioCreadoEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,14 +18,24 @@ public class UsuarioEventListener {
     @RabbitListener(queues = COLA_PUBLICACIONES_USUARIO_CREADO)
     public void onUsuarioCreado(UsuarioCreadoEvent evento) {
         log.info("Evento usuario.creado recibido: {}", evento.id());
-        // aquí va tu lógica, por ejemplo guardar una copia local del autor
     }
 
     @RabbitListener(queues = COLA_PUBLICACIONES_DLQ)
     public void onMensajeMuerto(Message mensaje) {
-        log.error("Mensaje no entregado enviado a DLQ. Cola origen: {}, motivo: {}, cuerpo: {}",
+        log.error("Mensaje no entregado enviado a DLQ. Cola origen: {}, motivo: {}",
                 mensaje.getMessageProperties().getHeader("x-first-death-queue"),
-                mensaje.getMessageProperties().getHeader("x-first-death-reason"),
-                new String(mensaje.getBody()));
+                mensaje.getMessageProperties().getHeader("x-first-death-reason"));
+    }
+
+    @RabbitListener(queues = COLA_PROYECTOS_SOLICITUD_CREADA)
+    public void onSolicitudCreada(SolicitudCreadaEvent evento) {
+        log.info("Solicitud {} recibida para el proyecto {}", evento.solicitudId(), evento.proyectoId());
+    }
+
+    @RabbitListener(queues = COLA_PROYECTOS_SOLICITUD_DLQ)
+    public void onSolicitudMuerta(Message mensaje) {
+        log.error("Solicitud no entregada enviada a DLQ. Cola origen: {}, motivo: {}",
+                mensaje.getMessageProperties().getHeader("x-first-death-queue"),
+                mensaje.getMessageProperties().getHeader("x-first-death-reason"));
     }
 }

@@ -54,4 +54,33 @@ public class RabbitConfig {
     MessageConverter jsonConverter() {
         return new JacksonJsonMessageConverter();
     }
+
+    @Bean
+    TopicExchange contactoExchange() {
+        return new TopicExchange(EXCHANGE_CONTACTO);
+    }
+
+    @Bean
+    Queue colaSolicitudCreada() {
+        return QueueBuilder.durable(COLA_PROYECTOS_SOLICITUD_CREADA)
+                .withArgument("x-dead-letter-exchange", EXCHANGE_DLX)
+                .withArgument("x-dead-letter-routing-key", RK_PROYECTOS_SOLICITUD_DLQ)
+                .build();
+    }
+
+    @Bean
+    Queue colaSolicitudDlq() {
+        return QueueBuilder.durable(COLA_PROYECTOS_SOLICITUD_DLQ).build();
+    }
+
+    @Bean
+    Binding bindingSolicitudCreada() {
+        return BindingBuilder.bind(colaSolicitudCreada())
+                .to(contactoExchange()).with(RK_SOLICITUD_CREADA);
+    }
+
+    @Bean
+    Binding bindingSolicitudDlq() {
+        return BindingBuilder.bind(colaSolicitudDlq()).to(dlx()).with(RK_PROYECTOS_SOLICITUD_DLQ);
+    }
 }

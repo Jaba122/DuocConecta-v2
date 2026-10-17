@@ -1,5 +1,6 @@
 package cl.duoc.duocconecta.contacto.service;
 
+import cl.duoc.duocconecta.contacto.config.SolicitudEventPublisher;
 import cl.duoc.duocconecta.contacto.domain.EstadoSolicitud;
 import cl.duoc.duocconecta.contacto.domain.SolicitudContacto;
 import cl.duoc.duocconecta.contacto.dto.DatosDeContacto;
@@ -29,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ServicioSolicitudes {
 
     private final RepositorioSolicitudes repositorioSolicitudes;
+    private final SolicitudEventPublisher publicador;
 
     /** Ni a uno mismo, ni dos vivas por el mismo proyecto: la bandeja no se debe poder inundar. */
     @Transactional
@@ -64,6 +66,11 @@ public class ServicioSolicitudes {
         // TODO (EP3): publicar el evento "solicitud.creada" para avisar por correo.
         // Hoy el destinatario se entera consultando GET /api/v1/colaboraciones/recibidas.
         return SolicitudRespuesta.desdeEntidad(repositorioSolicitudes.save(solicitud));
+
+        // dentro de crear(...)
+        SolicitudContacto guardada = repositorioSolicitudes.save(solicitud);
+        publicador.publicarSolicitudCreada(guardada);
+        return SolicitudRespuesta.desdeEntidad(guardada);
     }
 
     /**
@@ -111,4 +118,5 @@ public class ServicioSolicitudes {
                 .map(SolicitudRespuesta::desdeEntidad)
                 .toList();
     }
+
 }

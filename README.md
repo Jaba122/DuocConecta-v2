@@ -140,7 +140,7 @@ los mensajes en la DLQ.
 
 ## Requisitos
 
-- **Java 21**
+- **Java 25 (LTS)**
 - **Maven 3.9+**
 - **Docker** con Compose v2 (para PostgreSQL y RabbitMQ)
 - Un tenant de **Azure AD** con dos registros de aplicación. La guía de configuración del IDaaS se

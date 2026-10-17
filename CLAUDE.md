@@ -67,7 +67,7 @@ no hay nada que componer y pasar por el BFF sería una capa de más.
 
 | Qué | Decisión |
 |---|---|
-| Lenguaje | **Java 21** |
+| Lenguaje | **Java 25 (LTS)** |
 | Framework | **Spring Boot 4.1.1** (ver §3.1) |
 | Spring Security | **7.1.1** (forzado por `<spring-security.version>`) |
 | Build | **Maven**, monorepo multi-módulo |
@@ -286,7 +286,7 @@ son idénticos en `ms-usuarios` y `bff-web`, y los microservicios que vienen (`m
 ## 8. Cómo levantar el proyecto
 
 ```bash
-# Java 21 (el proyecto compila con release 21)
+# Java 25 (el proyecto compila con release 25)
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 
 # 1. Base de datos

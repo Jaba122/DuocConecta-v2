@@ -9,5 +9,11 @@ public final class MensajeriaConstantes {
     public static final String COLA_PUBLICACIONES_DLQ = "publicaciones.usuario-creado.dlq";
     public static final String RK_PUBLICACIONES_DLQ = "publicaciones.usuario-creado.dlq";
 
+    public static final String EXCHANGE_CONTACTO = "contacto.exchange";
+    public static final String RK_SOLICITUD_CREADA = "solicitud.creada";
+    public static final String COLA_PROYECTOS_SOLICITUD_CREADA = "proyectos.solicitud-creada";
+    public static final String COLA_PROYECTOS_SOLICITUD_DLQ = "proyectos.solicitud-creada.dlq";
+    public static final String RK_PROYECTOS_SOLICITUD_DLQ = "proyectos.solicitud-creada.dlq";
+
     private MensajeriaConstantes() {}
 }

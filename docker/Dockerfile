@@ -10,7 +10,7 @@
 # y el módulo common-seguridad para compilar cualquiera de los servicios.
 
 # ---------- Etapa 1: compilar ----------
-FROM maven:3.9-eclipse-temurin-21 AS compilacion
+FROM maven:3.9-eclipse-temurin-25 AS compilacion
 ARG SERVICIO
 WORKDIR /build
 
@@ -37,13 +37,13 @@ RUN mvn -q -B clean package -pl common-seguridad,${SERVICIO} -am -DskipTests \
 # El jar de Spring Boot se descompone para que las dependencias (~80 MB, casi nunca
 # cambian) queden en una capa distinta del código de la aplicación (unos pocos MB).
 # Sin esto, cada despliegue sube el jar entero a ECR y son minutos perdidos por iteración.
-FROM eclipse-temurin:21-jre-alpine AS capas
+FROM eclipse-temurin:25-jre-alpine AS capas
 WORKDIR /capas
 COPY --from=compilacion /build/app.jar app.jar
 RUN java -Djarmode=tools -jar app.jar extract --layers --destination extraido
 
 # ---------- Etapa 3: imagen final ----------
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 ARG SERVICIO
 WORKDIR /app
 
